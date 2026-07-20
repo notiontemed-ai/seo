@@ -14,5 +14,26 @@
   "author_id": "10",
   "medical_reviewer_id": "11",
   "region": "msk",
-  "related_articles": ["1", "2"]
+  "related_articles": [
+    {
+      "iblock_id": 68,
+      "element_id": 1
+    },
+    {
+      "iblock_id": 81,
+      "element_id": 2
+    }
+  ],
+  "primary_query": "тестовая статья",
+  "secondary_queries": [
+    "запрос 1",
+    "запрос 2"
+  ],
+  "short_answer": "Краткий ответ",
+  "sources": [
+    "https://example.com/source"
+  ],
+  "article_template_xml_id": "default",
+  "medical_reviewed_at": "2026-07-20",
+  "content_updated_at": "2026-07-20"
 }

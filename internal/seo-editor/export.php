@@ -37,6 +37,8 @@ if ($missing) jsonError(422, 'Не удалось сформировать XML: 
 $exporter = new BitrixArticleXmlExporter();
 $doc = $exporter->export($payload);
 $filename = $exporter->filename($payload);
+header('X-TEMED-XML-Filled-Properties: ' . (string)$exporter->filledProperties());
+header('X-TEMED-XML-Warnings: ' . rawurlencode(json_encode($exporter->warnings(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
 header('Content-Type: application/xml; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $filename . '"');
 header('X-Content-Type-Options: nosniff');
