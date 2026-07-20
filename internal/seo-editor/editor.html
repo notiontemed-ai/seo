@@ -575,14 +575,40 @@
       </div>
       <div class="card">
         <h3>Задание</h3>
+        <div class="hint mb-14">Задание включает полный текущий текст статьи. Скопируйте его целиком во внешний ИИ-ассистент.</div>
         <div class="btnrow mb-14">
           <button type="button" class="btn primary" data-action="build_layout_task">Сформировать задание на вёрстку</button>
           <button type="button" class="btn ghost" data-copy="layout_task">Копировать</button>
         </div>
         <div class="field">
-          <label for="layout_task">Задание для верстальщика / сборщика страницы</label>
+          <label for="layout_task">Задание на вёрстку</label>
           <textarea id="layout_task" name="layout_task" rows="12" class="code"></textarea>
         </div>
+        <div class="field">
+          <label for="external_layout_result">Результат внешней вёрстки</label>
+          <div class="hint">Вставьте сюда полный JSON-ответ внешнего ИИ. Нажмите «Проверить результат», затем «Применить результат вёрстки».</div>
+          <textarea
+            id="external_layout_result"
+            name="external_layout_result"
+            rows="18"
+            class="code"
+            placeholder="Вставьте JSON, полученный от внешнего ИИ-ассистента"
+          ></textarea>
+          <div class="hint">
+            После проверки и применения поле detail_html заменит итоговый текст статьи,
+            из которого формируется XML.
+          </div>
+        </div>
+        <div id="layout_result_status" class="api-info" aria-live="polite">
+          Результат вёрстки ещё не загружен.
+        </div>
+        <div class="btnrow">
+          <button type="button" class="btn" data-action="validate_layout_result">Проверить результат</button>
+          <button type="button" class="btn primary" data-action="apply_layout_result">Применить результат вёрстки</button>
+          <button type="button" class="btn ghost" data-action="clear_layout_result">Очистить результат</button>
+          <button type="button" class="btn ghost" data-action="restore_pre_layout_article">Откатить применённую вёрстку</button>
+        </div>
+        <div class="hint">После применения результат будет записан в итоговые поля статьи. Bitrix XML формируется из итоговой версии статьи. XML будет сформирован из применённой версии статьи.</div>
       </div>
       <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: сохранение →</button></div>
     </section>
