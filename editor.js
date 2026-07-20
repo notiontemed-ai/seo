@@ -1,0 +1,1525 @@
+/* ===== структуры статей: загружаются через защищённый proxy.php ===== */
+let STRUCTURES = [];
+let STRUCTURES_SOURCE = {
+  shared_ymyl_rules: {},
+  configs: []
+};
+
+const APP_DATA = {
+  dictionaries: {},
+  doctors: [],
+  articles: [],
+  clinics: [],
+  services: []
+};
+
+const RELATED_ARTICLES = new Map();
+
+
+const INTENT_RU={informational:"Информационный",commercial_informational:"Коммерческо-информационный",comparative:"Сравнительный"};
+
+function normalizeStructureConfig(config){
+  const blocks = Array.isArray(config.structure)
+    ? config.structure.map(item => {
+        let code = item.block || '';
+        if(item.repeat) code += '×' + String(item.repeat).replace('-', '–');
+        return [code, item.required !== false];
+      })
+    : [];
+
+  return {
+    id: config.id || '',
+    intent: config.intent || '',
+    v: config.version || '',
+    name: config.name || config.id || '',
+    when: config.when_to_use || '',
+    metric: config.primary_metric || '',
+    blocks,
+    forbidden: Array.isArray(config.forbidden)
+      ? config.forbidden.join('; ')
+      : (config.forbidden || ''),
+    raw: config
+  };
+}
+
+async function loadArticleStructures(){
+  structCards.innerHTML = '<div class="struct-empty">Загружаем структуры из TEMED SEO API…</div>';
+
+  intentCards.querySelectorAll('.intent-card').forEach(card => {
+    card.disabled = true;
+  });
+
+  try{
+    const response = await fetch('proxy.php?action=article_structures', {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: {
+        'Accept': 'application/json'
+      },
+      cache: 'no-store'
+    });
+
+    const result = await response.json();
+
+    if(response.status === 401){
+      window.location.reload();
+      return;
+    }
+
+    if(!response.ok || !result.success){
+      throw new Error(result.error || ('HTTP ' + response.status));
+    }
+
+    if(!result.data || !Array.isArray(result.data.configs)){
+      throw new Error('В ответе API отсутствует массив data.configs');
+    }
+
+    STRUCTURES_SOURCE = result.data;
+    STRUCTURES = result.data.configs.map(normalizeStructureConfig);
+
+    const currentIntent = document.getElementById('search_intent').value;
+
+    if(currentIntent){
+      renderStructs(currentIntent);
+    }else{
+      structCards.innerHTML =
+        '<div class="struct-empty">Выберите интент, чтобы увидеть доступные структуры</div>';
+    }
+
+    document.getElementById('side_status').textContent = 'справочники загружены';
+
+    logAction('Структуры загружены из TEMED SEO API', {
+      count: STRUCTURES.length,
+      api_version: result.api_version || '',
+      versions: [...new Set(STRUCTURES.map(item => item.v))]
+    });
+    const counts=document.getElementById('apiCounts');
+    if(counts&&APP_DATA.doctors.length){
+      counts.innerHTML=[
+        ['Врачи',APP_DATA.doctors.length],
+        ['Статьи',APP_DATA.articles.length],
+        ['Разделы',((APP_DATA.dictionaries.article_sections||{}).new||[]).length],
+        ['Клиники',APP_DATA.clinics.length],
+        ['Услуги',APP_DATA.services.length],
+        ['Структуры',STRUCTURES.length]
+      ].map(([name,count])=>'<span>'+escapeHtml(name)+': '+count+'</span>').join('');
+    }
+  }catch(error){
+    structCards.innerHTML =
+      '<div class="struct-empty">Не удалось загрузить структуры: '
+      + String(error.message || error)
+      + '</div>';
+
+    document.getElementById('side_status').textContent = 'ошибка загрузки структур';
+
+    logAction('Ошибка загрузки структур', {
+      error: String(error.message || error)
+    });
+  }finally{
+    intentCards.querySelectorAll('.intent-card').forEach(card => {
+      card.disabled = false;
+    });
+  }
+}
+
+
+
+/* ===== справочники TEMED SEO API ===== */
+function escapeHtml(value){
+  return String(value ?? '')
+    .replaceAll('&','&amp;')
+    .replaceAll('<','&lt;')
+    .replaceAll('>','&gt;')
+    .replaceAll('"','&quot;')
+    .replaceAll("'",'&#039;');
+}
+
+function propertyValues(item, code){
+  const prop=item&&item.properties?item.properties[code]:null;
+  if(!prop||!Array.isArray(prop.values)) return [];
+  return prop.values.map(entry=>{
+    const value=entry&&Object.prototype.hasOwnProperty.call(entry,'value')?entry.value:entry;
+    if(value===null||value===undefined) return '';
+    if(typeof value==='string'||typeof value==='number') return String(value);
+    if(typeof value==='object'){
+      if(value.name) return String(value.name);
+      if(value.value) return String(value.value);
+      if(value.text) return String(value.text);
+      if(value.absolute_url) return String(value.absolute_url);
+      if(value.url) return String(value.url);
+    }
+    return '';
+  }).filter(Boolean);
+}
+
+function firstProperty(item, codes){
+  for(const code of codes){
+    const values=propertyValues(item,code);
+    if(values.length) return values[0];
+  }
+  return '';
+}
+
+function doctorContext(id){
+  const doctor=APP_DATA.doctors.find(item=>String(item.id)===String(id));
+  if(!doctor) return null;
+
+  const specialties=[
+    ...propertyValues(doctor,'SPECIAL1_LP'),
+    ...propertyValues(doctor,'SPECIAL2_LP'),
+    ...propertyValues(doctor,'SPECIAL3_LP'),
+    ...propertyValues(doctor,'POSITION')
+  ].filter((value,index,array)=>array.indexOf(value)===index);
+
+  return {
+    id:doctor.id,
+    name:doctor.name,
+    code:doctor.code||'',
+    url:doctor.absolute_url||doctor.url||'',
+    specialties,
+    experience:firstProperty(doctor,['EXPERIENCE_LP','EXPERIENCE']),
+    clinics:propertyValues(doctor,'CLINIC'),
+    city:firstProperty(doctor,['CITY_LP']),
+    summary:doctor.summary||''
+  };
+}
+
+function genericContext(items,id){
+  const item=items.find(entry=>String(entry.id)===String(id));
+  if(!item) return null;
+  return {
+    id:item.id,
+    name:item.name,
+    code:item.code||'',
+    xml_id:item.xml_id||'',
+    url:item.absolute_url||item.url||'',
+    section:item.section||null,
+    summary:item.summary||'',
+    properties:item.properties||{}
+  };
+}
+
+function setOptions(select,items,placeholder,labelBuilder,valueBuilder){
+  const current=select.value;
+  select.innerHTML='';
+
+  const empty=document.createElement('option');
+  empty.value='';
+  empty.textContent=placeholder;
+  select.appendChild(empty);
+
+  items.forEach(item=>{
+    const option=document.createElement('option');
+    option.value=valueBuilder?valueBuilder(item):String(item.id??item.value??'');
+    option.textContent=labelBuilder?labelBuilder(item):String(item.name??item.value??'');
+    if(item.id!==undefined) option.dataset.id=String(item.id);
+    if(item.xml_id!==undefined) option.dataset.xmlId=String(item.xml_id||'');
+    select.appendChild(option);
+  });
+
+  if([...select.options].some(option=>option.value===current)){
+    select.value=current;
+  }
+}
+
+function enumFallback(items,fallbackValues){
+  if(Array.isArray(items)&&items.length) return items;
+  return fallbackValues.map((value,index)=>({
+    id:'fallback_'+index,
+    value,
+    xml_id:value.toLowerCase().replace(/[^a-zа-я0-9]+/gi,'_')
+  }));
+}
+
+function syncEnumSelect(select,idField,xmlField){
+  const option=select.selectedOptions[0];
+  document.getElementById(idField).value=option&&option.dataset.id?option.dataset.id:'';
+  document.getElementById(xmlField).value=option&&option.dataset.xmlId?option.dataset.xmlId:'';
+}
+
+function syncSection(){
+  const select=document.getElementById('article_section_id');
+  const option=select.selectedOptions[0];
+  const isNew=select.value==='__new__';
+
+  document.getElementById('newSectionField').classList.toggle('is-hidden', !isNew);
+  document.getElementById('article_section').value=
+    isNew
+      ? document.getElementById('new_article_section').value
+      : (option&&option.dataset.name?option.dataset.name:'');
+  document.getElementById('article_section_code').value=
+    isNew?'':(option&&option.dataset.code?option.dataset.code:'');
+}
+
+function doctorDisplayName(doctor){
+  const specialty=firstProperty(doctor,['SPECIAL1_LP','POSITION']);
+  return doctor.name+(specialty?' — '+specialty:'');
+}
+
+function fillDoctorDatalist(listId){
+  const list=document.getElementById(listId);
+  list.innerHTML='';
+
+  APP_DATA.doctors.forEach(doctor=>{
+    const option=document.createElement('option');
+    option.value=doctorDisplayName(doctor);
+    option.dataset.id=String(doctor.id);
+    list.appendChild(option);
+  });
+}
+
+function resolveDoctorBySearch(searchValue){
+  const value=String(searchValue||'').trim().toLowerCase();
+
+  if(!value) return null;
+
+  return APP_DATA.doctors.find(doctor=>
+    doctorDisplayName(doctor).toLowerCase()===value
+    || String(doctor.name||'').toLowerCase()===value
+  ) || null;
+}
+
+function syncDoctorSearch(searchId,hiddenId,hiddenNameId,infoId){
+  const search=document.getElementById(searchId);
+  const doctor=resolveDoctorBySearch(search.value);
+
+  document.getElementById(hiddenId).value=doctor?String(doctor.id):'';
+  document.getElementById(hiddenNameId).value=doctor?doctor.name:'';
+
+  const info=document.getElementById(infoId);
+
+  if(!doctor){
+    info.textContent=search.value.trim()
+      ? 'Выберите врача из выпадающего списка.'
+      : '';
+    return;
+  }
+
+  const context=doctorContext(doctor.id);
+  const parts=[];
+
+  if(context.specialties.length) parts.push(context.specialties.join(', '));
+  if(context.experience) parts.push('Стаж: '+context.experience);
+  if(context.city) parts.push(context.city);
+  if(context.clinics.length) parts.push('Клиники: '+context.clinics.join(', '));
+
+  info.textContent=parts.join(' · ')||'Карточка врача выбрана';
+}
+
+function renderDoctorInfo(selectId,hiddenNameId,infoId){
+  const select=document.getElementById(selectId);
+  const context=doctorContext(select.value);
+  document.getElementById(hiddenNameId).value=context?context.name:'';
+
+  const info=document.getElementById(infoId);
+  if(!context){
+    info.textContent='';
+    return;
+  }
+
+  const parts=[];
+  if(context.specialties.length) parts.push(context.specialties.join(', '));
+  if(context.experience) parts.push('Стаж: '+context.experience);
+  if(context.city) parts.push(context.city);
+  if(context.clinics.length) parts.push('Клиники: '+context.clinics.join(', '));
+
+  info.textContent=parts.join(' · ')||'Карточка врача выбрана';
+}
+
+function renderGenericInfo(selectId,hiddenNameId,infoId,items){
+  const select=document.getElementById(selectId);
+  const context=genericContext(items,select.value);
+  document.getElementById(hiddenNameId).value=context?context.name:'';
+
+  const info=document.getElementById(infoId);
+  if(!context){
+    info.textContent='';
+    return;
+  }
+
+  const parts=[];
+  if(context.section&&context.section.name) parts.push(context.section.name);
+  if(context.summary) parts.push(context.summary.slice(0,220));
+  info.textContent=parts.join(' · ')||'Карточка выбрана';
+}
+
+function syncExistingArticle(){
+  const selector=document.getElementById('existing_article_selector');
+  const key=selector.value;
+  const [source,id]=key.includes(':')?key.split(':',2):['',key];
+  document.getElementById('existing_article_id').value=id||'';
+  document.getElementById('existing_article_source').value=source||'';
+}
+
+function articleKey(article){
+  return String(article.source||'new')+':'+String(article.id);
+}
+
+function renderRelatedResults(items){
+  const container=document.getElementById('relatedSearchResults');
+  container.innerHTML='';
+
+  if(!items.length){
+    container.innerHTML='<div class="struct-empty">Ничего не найдено в загруженном списке статей.</div>';
+    return;
+  }
+
+  items.forEach(article=>{
+    const row=document.createElement('div');
+    row.className='result-item';
+
+    const main=document.createElement('div');
+    main.className='ri-main';
+    main.innerHTML=
+      '<div class="ri-title">'+escapeHtml(article.name)+'</div>'+
+      '<div class="ri-meta">'+escapeHtml((article.source||'new')+' · ID '+article.id+(article.section&&article.section.name?' · '+article.section.name:''))+'</div>'+
+      '<div class="ri-summary">'+escapeHtml((article.summary||article.preview_text||'').slice(0,260))+'</div>';
+
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='btn';
+    button.textContent=RELATED_ARTICLES.has(articleKey(article))?'Добавлено':'Добавить';
+    button.disabled=RELATED_ARTICLES.has(articleKey(article));
+    button.addEventListener('click',()=>{
+      RELATED_ARTICLES.set(articleKey(article),article);
+      renderSelectedRelated();
+      button.textContent='Добавлено';
+      button.disabled=true;
+    });
+
+    row.append(main,button);
+    container.appendChild(row);
+  });
+}
+
+function renderSelectedRelated(){
+  const textarea=document.getElementById('selected_related_articles');
+  const list=document.getElementById('selectedRelatedList');
+  const items=[...RELATED_ARTICLES.values()];
+
+  textarea.value=items.map(item=>{
+    const url=item.absolute_url||item.url||'';
+    return (item.source||'new')+':'+item.id+' | '+item.name+(url?' | '+url:'');
+  }).join('\n');
+
+  list.innerHTML='';
+
+  items.forEach(item=>{
+    const chip=document.createElement('span');
+    chip.className='selected-chip';
+
+    const title=document.createElement('span');
+    title.textContent=item.name;
+
+    const remove=document.createElement('button');
+    remove.type='button';
+    remove.title='Убрать';
+    remove.textContent='×';
+    remove.addEventListener('click',()=>{
+      RELATED_ARTICLES.delete(articleKey(item));
+      renderSelectedRelated();
+      searchRelatedArticles();
+    });
+
+    chip.append(title,remove);
+    list.appendChild(chip);
+  });
+}
+
+function searchRelatedArticles(){
+  const query=document.getElementById('context_search_query').value.trim().toLowerCase();
+  const terms=query.split(/\s+/).filter(Boolean);
+
+  let items=APP_DATA.articles.filter(article=>{
+    if(!terms.length) return true;
+    const haystack=[
+      article.name,
+      article.code,
+      article.summary,
+      article.preview_text,
+      article.section&&article.section.name
+    ].filter(Boolean).join(' ').toLowerCase();
+    return terms.every(term=>haystack.includes(term));
+  });
+
+  renderRelatedResults(items.slice(0,20));
+  logAction('Поиск связанных статей',{query,found:items.length,shown:Math.min(items.length,20)});
+}
+
+function populateBootstrap(data){
+  APP_DATA.dictionaries=data.dictionaries||{};
+  APP_DATA.doctors=Array.isArray(data.doctors)?data.doctors:[];
+  APP_DATA.articles=data.articles&&Array.isArray(data.articles.items)?data.articles.items:[];
+  APP_DATA.clinics=data.clinics&&Array.isArray(data.clinics.items)?data.clinics.items:[];
+  APP_DATA.services=data.prices&&Array.isArray(data.prices.items)?data.prices.items:[];
+
+  const dictionaries=APP_DATA.dictionaries;
+
+  const articleTypes=enumFallback(
+    dictionaries.article_types,
+    ['Обзор','Диагноз','Метод','Вопрос','Операция','Региональная','Сравнение']
+  );
+  setOptions(
+    document.getElementById('article_type'),
+    articleTypes,
+    '— выбрать —',
+    item=>item.value,
+    item=>item.value
+  );
+  [...document.getElementById('article_type').options].forEach(option=>{
+    const item=articleTypes.find(entry=>entry.value===option.value);
+    if(item){
+      option.dataset.id=String(item.id||'');
+      option.dataset.xmlId=String(item.xml_id||'');
+    }
+  });
+
+  const regions=Array.isArray(dictionaries.regions)?dictionaries.regions:[];
+  setOptions(
+    document.getElementById('region'),
+    regions,
+    '— не выбран —',
+    item=>item.value,
+    item=>item.value
+  );
+  [...document.getElementById('region').options].forEach(option=>{
+    const item=regions.find(entry=>entry.value===option.value);
+    if(item){
+      option.dataset.id=String(item.id||'');
+      option.dataset.xmlId=String(item.xml_id||'');
+    }
+  });
+
+  const templates=enumFallback(dictionaries.article_templates,['default']);
+  setOptions(
+    document.getElementById('article_template'),
+    templates,
+    '— выбрать —',
+    item=>item.value,
+    item=>item.value
+  );
+  [...document.getElementById('article_template').options].forEach(option=>{
+    const item=templates.find(entry=>entry.value===option.value);
+    if(item){
+      option.dataset.id=String(item.id||'');
+      option.dataset.xmlId=String(item.xml_id||'');
+    }
+  });
+  if([...document.getElementById('article_template').options].some(option=>option.value==='default')){
+    document.getElementById('article_template').value='default';
+  }
+
+  const sections=dictionaries.article_sections&&Array.isArray(dictionaries.article_sections.new)
+    ? dictionaries.article_sections.new
+    : [];
+  const sectionSelect=document.getElementById('article_section_id');
+  sectionSelect.innerHTML='<option value="">— без раздела —</option>';
+  sections.forEach(section=>{
+    const option=document.createElement('option');
+    option.value=String(section.id);
+    option.dataset.name=section.name||'';
+    option.dataset.code=section.code||'';
+    option.textContent='— '.repeat(Math.max(0,(section.depth_level||1)-1))+section.name;
+    sectionSelect.appendChild(option);
+  });
+  const newSection=document.createElement('option');
+  newSection.value='__new__';
+  newSection.textContent='＋ Создать новый раздел';
+  sectionSelect.appendChild(newSection);
+
+  fillDoctorDatalist('authorDoctorList');
+  fillDoctorDatalist('reviewerDoctorList');
+
+  setOptions(
+    document.getElementById('clinic_id'),
+    APP_DATA.clinics,
+    '— не выбрана —',
+    item=>item.name,
+    item=>String(item.id)
+  );
+
+  setOptions(
+    document.getElementById('service_id'),
+    APP_DATA.services,
+    '— не выбрана —',
+    item=>item.name,
+    item=>String(item.id)
+  );
+
+  const existing=document.getElementById('existing_article_selector');
+  existing.innerHTML='<option value="">— выбрать статью —</option>';
+  APP_DATA.articles.forEach(article=>{
+    const option=document.createElement('option');
+    option.value=articleKey(article);
+    option.textContent=(article.source==='legacy'?'Старая':'Новая')+' · '+article.name+' · ID '+article.id;
+    existing.appendChild(option);
+  });
+
+  const counts=document.getElementById('apiCounts');
+  counts.innerHTML=[
+    ['Врачи',APP_DATA.doctors.length],
+    ['Статьи',APP_DATA.articles.length],
+    ['Разделы',sections.length],
+    ['Клиники',APP_DATA.clinics.length],
+    ['Услуги',APP_DATA.services.length],
+    ['Структуры',STRUCTURES.length]
+  ].map(([name,count])=>'<span>'+escapeHtml(name)+': '+count+'</span>').join('');
+
+  document.getElementById('side_status').textContent='справочники загружены';
+
+  syncEnumSelect(document.getElementById('article_type'),'article_type_id','article_type_xml_id');
+  syncEnumSelect(document.getElementById('region'),'region_id','region_xml_id');
+  syncEnumSelect(document.getElementById('article_template'),'article_template_id','article_template_xml_id');
+  syncSection();
+  renderTemplatesFromApi(templates);
+
+  logAction('Загружены справочники TEMED SEO API',{
+    doctors:APP_DATA.doctors.length,
+    articles:APP_DATA.articles.length,
+    sections:sections.length,
+    clinics:APP_DATA.clinics.length,
+    services:APP_DATA.services.length,
+    article_types:articleTypes.length,
+    regions:regions.length,
+    templates:templates.length
+  });
+}
+
+async function loadBootstrapData(){
+  try{
+    const response=await fetch('proxy.php?action=bootstrap',{
+      method:'GET',
+      credentials:'same-origin',
+      headers:{'Accept':'application/json'},
+      cache:'no-store'
+    });
+    const result=await response.json();
+
+    if(response.status===401){
+      window.location.reload();
+      return;
+    }
+    if(!response.ok||!result.success){
+      throw new Error(result.error||('HTTP '+response.status));
+    }
+
+    populateBootstrap(result.data||{});
+  }catch(error){
+    document.getElementById('apiCounts').innerHTML=
+      '<span>Ошибка загрузки справочников: '+escapeHtml(error.message||error)+'</span>';
+    document.getElementById('side_status').textContent='ошибка справочников';
+    logAction('Ошибка загрузки bootstrap',{error:String(error.message||error)});
+  }
+}
+
+document.getElementById('existing_article_selector').addEventListener('change',syncExistingArticle);
+document.getElementById('article_type').addEventListener('change',()=>{
+  syncEnumSelect(document.getElementById('article_type'),'article_type_id','article_type_xml_id');
+});
+document.getElementById('region').addEventListener('change',()=>{
+  syncEnumSelect(document.getElementById('region'),'region_id','region_xml_id');
+});
+document.getElementById('article_template').addEventListener('change',()=>{
+  syncEnumSelect(document.getElementById('article_template'),'article_template_id','article_template_xml_id');
+  const value=document.getElementById('article_template').value;
+  if(value) selectTemplate(value);
+});
+document.getElementById('article_section_id').addEventListener('change',syncSection);
+document.getElementById('new_article_section').addEventListener('input',syncSection);
+['input','change','blur'].forEach(eventName=>{
+  document.getElementById('author_search').addEventListener(eventName,()=>{
+    syncDoctorSearch('author_search','author_id','author','authorInfo');
+  });
+
+  document.getElementById('medical_reviewer_search').addEventListener(eventName,()=>{
+    syncDoctorSearch(
+      'medical_reviewer_search',
+      'medical_reviewer_id',
+      'medical_reviewer',
+      'reviewerInfo'
+    );
+  });
+});
+document.getElementById('clinic_id').addEventListener('change',()=>{
+  renderGenericInfo('clinic_id','clinic','clinicInfo',APP_DATA.clinics);
+});
+document.getElementById('service_id').addEventListener('change',()=>{
+  renderGenericInfo('service_id','service','serviceInfo',APP_DATA.services);
+});
+document.getElementById('context_search_query').addEventListener('keydown',event=>{
+  if(event.key==='Enter'){
+    event.preventDefault();
+    searchRelatedArticles();
+  }
+});
+
+
+/* ===== state / dom ===== */
+const form=document.getElementById('articleForm');
+const briefPreview=document.getElementById('briefPreview');
+const actionLog=document.getElementById('action_log');
+const steps=[...document.querySelectorAll('.step')];
+const navs=[...document.querySelectorAll('.navstep')];
+let cur=0;
+const visited=new Set([0]);
+
+/* ===== navigation ===== */
+function goto(n){
+  cur=n;visited.add(n);
+  steps.forEach(s=>s.classList.toggle('on',+s.dataset.step===n));
+  navs.forEach(b=>{
+    const i=+b.dataset.step;
+    b.classList.toggle('current',i===n);
+    b.classList.toggle('done',visited.has(i)&&i!==n);
+  });
+  document.querySelector('.main').scrollIntoView({behavior:'instant',block:'start'});
+  window.scrollTo({top:0});
+}
+navs.forEach(b=>b.addEventListener('click',()=>goto(+b.dataset.step)));
+document.querySelectorAll('[data-nav]').forEach(b=>{
+  b.addEventListener('click',()=>goto(b.dataset.nav==='next'?Math.min(cur+1,steps.length-1):Math.max(cur-1,0)));
+});
+
+/* ===== mode segment ===== */
+const modeSeg=document.getElementById('modeSeg');
+modeSeg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+  modeSeg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  const mode=b.dataset.mode;
+  document.getElementById('workflow_mode').value=mode;
+  document.getElementById('existingArticleField').classList.toggle('is-hidden', mode!=='rework');
+  document.getElementById('topMode').textContent=mode==='rework'?'Переработка':'Новая статья';
+  logAction('Выбран режим: '+mode);
+}));
+
+/* ===== task name -> topbar ===== */
+document.getElementById('task_name').addEventListener('input',e=>{
+  document.getElementById('topTaskName').textContent=e.target.value||'Новая задача';
+});
+
+/* ===== intent -> structures ===== */
+const intentCards=document.getElementById('intentCards');
+const structCards=document.getElementById('structCards');
+const structDetail=document.getElementById('structDetail');
+
+intentCards.querySelectorAll('.intent-card').forEach(c=>c.addEventListener('click',()=>{
+  intentCards.querySelectorAll('.intent-card').forEach(x=>x.classList.remove('on'));
+  c.classList.add('on');
+  const intent=c.dataset.intent;
+  document.getElementById('search_intent').value=intent;
+  renderStructs(intent);
+  selectStruct(null);
+  logAction('Выбран интент: '+intent);
+}));
+
+function renderStructs(intent){
+  const list=STRUCTURES.filter(s=>s.intent===intent);
+  structCards.innerHTML='';
+  list.forEach(s=>{
+    const b=document.createElement('button');
+    b.type='button';b.className='struct-card';b.dataset.sid=s.id;
+    b.innerHTML=`<div class="sn">${s.name}</div><div class="sid">${s.id} · v${s.v}</div><div class="sw">${s.when}</div><div class="sm">Метрика теста: ${s.metric}</div>`;
+    b.addEventListener('click',()=>selectStruct(s.id));
+    structCards.appendChild(b);
+  });
+}
+
+function selectStruct(sid){
+  structCards.querySelectorAll('.struct-card').forEach(x=>x.classList.toggle('on',x.dataset.sid===sid));
+  const s=STRUCTURES.find(x=>x.id===sid);
+  document.getElementById('article_structure').value=s?s.id:'';
+  document.getElementById('article_structure_name').value=s?s.name:'';
+  document.getElementById('article_structure_version').value=s?s.v:'';
+  document.getElementById('topStructBadge').textContent=s?s.id+' · v'+s.v:'структура не выбрана';
+  if(s){
+    structDetail.classList.add('on');
+    structDetail.innerHTML=
+      `<b class="struct-detail-title">${s.name}</b> <span class="mono struct-detail-meta">· ${s.id} · v${s.v} · ${INTENT_RU[s.intent]}</span>
+       <div class="blocks">${s.blocks.map(([b,req])=>`<span class="blk${req?' req':''}">${b}${req?'':' (опц.)'}</span>`).join('')}</div>
+       <div class="fb">Запрещено: ${s.forbidden}</div>`;
+    logAction('Выбрана структура',{id:s.id,version:s.v});
+  }else{
+    structDetail.classList.remove('on');structDetail.innerHTML='';
+  }
+}
+
+/* ===== log / brief (совместимо с прототипом) ===== */
+function formToObject(){
+  const data=new FormData(form);const result={};
+  for(const [key,value] of data.entries()) result[key]=value;
+  return result;
+}
+function logAction(action,details){
+  const timestamp=new Date().toISOString();
+  actionLog.value+='['+timestamp+'] '+action;
+  if(details) actionLog.value+='\n'+JSON.stringify(details,null,2);
+  actionLog.value+='\n\n';
+  actionLog.scrollTop=actionLog.scrollHeight;
+}
+function buildBrief(){
+  const data=formToObject();
+
+  const articleTypeOption=document.getElementById('article_type').selectedOptions[0];
+  const regionOption=document.getElementById('region').selectedOptions[0];
+  const templateOption=document.getElementById('article_template').selectedOptions[0];
+
+  const relatedArticles=[...RELATED_ARTICLES.values()].map(article=>({
+    id:article.id,
+    source:article.source||'new',
+    name:article.name,
+    code:article.code||'',
+    url:article.absolute_url||article.url||'',
+    section:article.section||null,
+    summary:article.summary||''
+  }));
+
+  const brief={
+    workflow:{
+      mode:data.workflow_mode,
+      existing_article_id:data.existing_article_id||'',
+      existing_article_source:data.existing_article_source||'',
+      task_name:data.task_name
+    },
+    search_task:{
+      topic:data.topic,
+      primary_query:data.primary_query,
+      secondary_queries:data.secondary_queries
+        ? data.secondary_queries.split('\n').map(value=>value.trim()).filter(Boolean)
+        : [],
+      search_intent:data.search_intent,
+      article_structure:data.article_structure,
+      article_structure_name:data.article_structure_name,
+      article_structure_version:data.article_structure_version,
+      article_type:{
+        id:data.article_type_id||'',
+        value:data.article_type||'',
+        xml_id:data.article_type_xml_id||''
+      },
+      region:{
+        id:data.region_id||'',
+        value:data.region||'',
+        xml_id:data.region_xml_id||''
+      },
+      reader_goal:data.reader_goal
+    },
+    placement:{
+      section:{
+        id:data.article_section_id&&data.article_section_id!=='__new__'
+          ? data.article_section_id
+          : '',
+        name:data.article_section||'',
+        code:data.article_section_code||'',
+        create_new:data.article_section_id==='__new__',
+        new_name:data.new_article_section||''
+      },
+      template:{
+        id:data.article_template_id||'',
+        value:data.article_template||'',
+        xml_id:data.article_template_xml_id||''
+      }
+    },
+    medical_roles:{
+      author:doctorContext(data.author_id),
+      medical_reviewer:doctorContext(data.medical_reviewer_id),
+      expert_material:data.expert_material
+    },
+    internal_context:{
+      clinic:genericContext(APP_DATA.clinics,data.clinic_id),
+      service:genericContext(APP_DATA.services,data.service_id),
+      context_search_query:data.context_search_query,
+      related_articles:relatedArticles,
+      internal_facts:data.internal_facts
+    },
+    sources:{
+      source_requirements:data.source_requirements,
+      provided_sources:data.provided_sources,
+      approved_sources:data.approved_sources
+    },
+    instructions:{
+      required_content:data.required_content,
+      forbidden_content:data.forbidden_content,
+      tone_notes:data.tone_notes,
+      length_target:data.length_target
+    },
+    generation:{
+      mode:data.generation_mode||'builtin',
+      external_text_loaded:!!(data.external_generated_text&&data.external_generated_text.trim())
+    },
+    med_review:{
+      questions:data.med_questions||'',
+      answers:data.med_answers||''
+    },
+    layout:{
+      template:data.layout_template||data.article_template||'',
+      available_html_blocks:Array.isArray(APP_DATA.dictionaries.html_blocks)
+        ? APP_DATA.dictionaries.html_blocks
+        : [],
+      available_forms:Array.isArray(APP_DATA.dictionaries.forms)
+        ? APP_DATA.dictionaries.forms
+        : [],
+      notes:data.layout_notes||'',
+      task_ready:!!(data.layout_task&&data.layout_task.trim())
+    }
+  };
+
+  briefPreview.textContent=JSON.stringify(brief,null,2);
+  logAction('Сформирован предварительный JSON задания',brief);
+  return brief;
+}
+
+/* ===== защищённая связь с n8n через proxy.php ===== */
+function currentArticleObject(){
+  const parseMaybeJson=value=>{
+    const text=String(value||'').trim();
+    if(!text) return [];
+    try{return JSON.parse(text);}catch(_){return text;}
+  };
+
+  return {
+    name:document.getElementById('result_name').value.trim(),
+    code:document.getElementById('result_code').value.trim(),
+    seo_title:document.getElementById('result_seo_title').value.trim(),
+    meta_description:document.getElementById('result_meta_description').value.trim(),
+    preview_text:document.getElementById('result_preview').value.trim(),
+    short_answer:document.getElementById('result_short_answer').value.trim(),
+    detail_html:document.getElementById('result_detail_html').value.trim(),
+    sources:parseMaybeJson(document.getElementById('result_sources').value),
+    related_articles:parseMaybeJson(document.getElementById('result_related_articles').value)
+  };
+}
+
+function selectedStructureConfig(){
+  const id=document.getElementById('article_structure').value;
+  const item=STRUCTURES.find(entry=>entry.id===id);
+  return item&&item.raw?item.raw:null;
+}
+
+function actionPayload(){
+  const brief=buildBrief();
+
+  return {
+    ...brief,
+    brief,
+    structure_config:selectedStructureConfig(),
+    shared_ymyl_rules:STRUCTURES_SOURCE.shared_ymyl_rules||{},
+    generated_outline:document.getElementById('generated_outline').value.trim(),
+    article:currentArticleObject(),
+    med_questions:document.getElementById('med_questions').value.trim(),
+    med_answers:document.getElementById('med_answers').value.trim(),
+    validation_report:document.getElementById('validation_report').value.trim(),
+    revision_request:document.getElementById('revision_request').value.trim()
+  };
+}
+
+function setButtonBusy(button,busy){
+  if(!button)return;
+
+  if(busy){
+    button.dataset.originalText=button.textContent;
+    button.textContent='Выполняется…';
+    button.disabled=true;
+    button.setAttribute('aria-busy','true');
+  }else{
+    button.textContent=button.dataset.originalText||button.textContent;
+    button.disabled=false;
+    button.removeAttribute('aria-busy');
+  }
+}
+
+function readableError(payload,response){
+  if(payload&&payload.message)return payload.message;
+  if(payload&&payload.error)return payload.error;
+  return 'Ошибка HTTP '+response.status;
+}
+
+async function callN8n(action,data,button){
+  setButtonBusy(button,true);
+  document.getElementById('side_status').textContent='n8n: '+action+'…';
+
+  try{
+    const response=await fetch('proxy.php',{
+      method:'POST',
+      credentials:'same-origin',
+      cache:'no-store',
+      headers:{
+        'Content-Type':'application/json',
+        'Accept':'application/json'
+      },
+      body:JSON.stringify({
+        action,
+        data
+      })
+    });
+
+    const text=await response.text();
+    let payload;
+
+    try{
+      payload=JSON.parse(text);
+    }catch(_){
+      throw new Error('Сервер вернул не JSON: '+text.slice(0,1000));
+    }
+
+    if(response.status===401){
+      window.location.reload();
+      throw new Error('Сессия редактора завершена.');
+    }
+
+    if(!response.ok||payload.success!==true){
+      throw new Error(readableError(payload,response));
+    }
+
+    document.getElementById('side_status').textContent='n8n: выполнено';
+    logAction('n8n: '+action,payload);
+    return payload.data||{};
+  }catch(error){
+    document.getElementById('side_status').textContent='n8n: ошибка';
+    logAction('Ошибка n8n: '+action,{
+      error:String(error.message||error)
+    });
+    alert('Не удалось выполнить действие:\n\n'+String(error.message||error));
+    throw error;
+  }finally{
+    setButtonBusy(button,false);
+  }
+}
+
+function valueToText(value){
+  if(value===null||value===undefined)return '';
+  if(typeof value==='string')return value;
+  return JSON.stringify(value,null,2);
+}
+
+function setArticleResult(article){
+  if(!article||typeof article!=='object')return;
+
+  document.getElementById('result_name').value=article.name||'';
+  document.getElementById('result_code').value=article.code||'';
+  document.getElementById('result_seo_title').value=article.seo_title||'';
+  document.getElementById('result_meta_description').value=article.meta_description||'';
+  document.getElementById('result_preview').value=article.preview_text||article.preview||'';
+  document.getElementById('result_short_answer').value=article.short_answer||'';
+  document.getElementById('result_detail_html').value=article.detail_html||article.html||'';
+  document.getElementById('result_sources').value=valueToText(article.sources||[]);
+  document.getElementById('result_related_articles').value=valueToText(article.related_articles||[]);
+}
+
+function questionsToText(data){
+  if(data.questions_text)return data.questions_text;
+  if(!Array.isArray(data.questions))return '';
+
+  return data.questions.map((item,index)=>{
+    const id=item.id||('M'+(index+1));
+    const lines=[
+      id+'. '+(item.question||''),
+      item.fragment?'Фрагмент: '+item.fragment:'',
+      item.reason?'Причина: '+item.reason:'',
+      item.suggested_safe_wording?'Безопасная формулировка: '+item.suggested_safe_wording:''
+    ].filter(Boolean);
+    return lines.join('\n');
+  }).join('\n\n');
+}
+
+async function runResearchSources(button){
+  const data=await callN8n('research_sources',actionPayload(),button);
+
+  document.getElementById('approved_sources').value=
+    data.approved_sources_text
+    || valueToText(data.candidates||[]);
+
+  logAction('Источники подготовлены',{
+    candidates:Array.isArray(data.candidates)?data.candidates.length:0,
+    search_queries:Array.isArray(data.search_queries)?data.search_queries.length:0
+  });
+}
+
+async function runGenerateOutline(button){
+  const brief=buildBrief();
+
+  if(!brief.search_task.topic||!brief.search_task.primary_query){
+    alert('Сначала заполните тему и основной поисковый запрос.');
+    return;
+  }
+
+  if(!brief.search_task.search_intent||!brief.search_task.article_structure){
+    alert('Сначала выберите интент и структуру статьи.');
+    return;
+  }
+
+  const data=await callN8n('generate_outline',actionPayload(),button);
+
+  document.getElementById('generated_outline').value=
+    data.outline_text
+    || valueToText(data.outline||data);
+
+  document.getElementById('generated_outline').dataset.approved='N';
+  document.getElementById('side_status').textContent='план сформирован';
+}
+
+async function runApproveOutline(button){
+  const outline=document.getElementById('generated_outline').value.trim();
+
+  if(!outline){
+    alert('Сначала сформируйте план статьи.');
+    return;
+  }
+
+  await callN8n('approve_outline',actionPayload(),button);
+  document.getElementById('generated_outline').dataset.approved='Y';
+  document.getElementById('side_status').textContent='план утверждён';
+  alert('План утверждён.');
+}
+
+async function runGenerateArticle(button){
+  const outline=document.getElementById('generated_outline').value.trim();
+
+  if(!outline){
+    alert('Сначала сформируйте и проверьте план статьи.');
+    return;
+  }
+
+  if(document.getElementById('generated_outline').dataset.approved!=='Y'){
+    const proceed=confirm('План ещё не отмечен как утверждённый. Всё равно запустить генерацию?');
+    if(!proceed)return;
+  }
+
+  const data=await callN8n('generate_article',actionPayload(),button);
+  setArticleResult(data);
+
+  if(Array.isArray(data.medical_review_questions)){
+    document.getElementById('med_questions').value=questionsToText({
+      questions:data.medical_review_questions
+    });
+  }
+
+  document.getElementById('side_status').textContent='статья сгенерирована';
+  goto(9);
+}
+
+async function runExtractMedQuestions(button){
+  const article=currentArticleObject();
+
+  if(!article.detail_html){
+    alert('Сначала сформируйте или загрузите текст статьи.');
+    return;
+  }
+
+  const data=await callN8n('extract_med_questions',actionPayload(),button);
+  document.getElementById('med_questions').value=questionsToText(data);
+  document.getElementById('side_status').textContent='вопросы подготовлены';
+}
+
+async function runApplyMedAnswers(button){
+  const answers=document.getElementById('med_answers').value.trim();
+
+  if(!answers){
+    alert('Сначала вставьте ответы медицинского редактора.');
+    return;
+  }
+
+  const data=await callN8n('apply_med_answers',actionPayload(),button);
+  setArticleResult(data.article||data);
+  document.getElementById('side_status').textContent='ответы врача применены';
+  goto(9);
+}
+
+async function runValidateArticle(button){
+  const article=currentArticleObject();
+
+  if(!article.detail_html){
+    alert('Текст статьи пока пуст.');
+    return;
+  }
+
+  const data=await callN8n('validate_article',actionPayload(),button);
+  document.getElementById('validation_report').value=
+    data.report_text
+      ? data.report_text+'\n\n'+JSON.stringify(data,null,2)
+      : JSON.stringify(data,null,2);
+
+  document.getElementById('side_status').textContent=
+    data.passed?'проверка пройдена':'есть замечания';
+}
+
+async function runReviseArticle(button){
+  const comments=document.getElementById('revision_request').value.trim();
+
+  if(!comments){
+    alert('Укажите, что именно нужно переработать.');
+    return;
+  }
+
+  const data=await callN8n('revise_article',actionPayload(),button);
+  setArticleResult(data.article||data);
+  document.getElementById('side_status').textContent='правки внесены';
+  goto(9);
+}
+
+async function refreshDictionaries(button){
+  setButtonBusy(button,true);
+  try{
+    await Promise.all([
+      loadArticleStructures(),
+      loadBootstrapData()
+    ]);
+    document.getElementById('side_status').textContent='справочники обновлены';
+  }finally{
+    setButtonBusy(button,false);
+  }
+}
+
+function propertyTextFromArticle(item,code){
+  const values=propertyValues(item,code);
+  if(!values.length)return '';
+  return values.length===1?values[0]:values.join('\n');
+}
+
+async function loadExistingArticle(button){
+  const id=document.getElementById('existing_article_id').value;
+  const source=document.getElementById('existing_article_source').value||'new';
+
+  if(!id){
+    alert('Выберите статью из списка.');
+    return;
+  }
+
+  setButtonBusy(button,true);
+
+  try{
+    const url='proxy.php?action=article&id='
+      +encodeURIComponent(id)
+      +'&source='+encodeURIComponent(source);
+
+    const response=await fetch(url,{
+      credentials:'same-origin',
+      headers:{'Accept':'application/json'},
+      cache:'no-store'
+    });
+
+    const payload=await response.json();
+
+    if(!response.ok||payload.success!==true){
+      throw new Error(readableError(payload,response));
+    }
+
+    const item=payload.data&&payload.data.item
+      ? payload.data.item
+      : payload.data;
+
+    if(!item||typeof item!=='object'){
+      throw new Error('API не вернул карточку статьи.');
+    }
+
+    document.getElementById('task_name').value='Переработка: '+(item.name||'');
+    document.getElementById('result_name').value=item.name||'';
+    document.getElementById('result_code').value=item.code||'';
+    document.getElementById('result_preview').value=
+      item.preview_text||item.summary||propertyTextFromArticle(item,'INFO');
+    document.getElementById('result_detail_html').value=
+      item.detail_html||item.detail_text||item.html||'';
+    document.getElementById('result_seo_title').value=
+      item.seo_title||item.meta_title||'';
+    document.getElementById('result_meta_description').value=
+      item.meta_description||'';
+    document.getElementById('result_short_answer').value=
+      propertyTextFromArticle(item,'SHORT_ANSWER');
+    document.getElementById('result_sources').value=
+      propertyTextFromArticle(item,'SOURCES');
+
+    logAction('Загружена существующая статья',{
+      id,
+      source,
+      name:item.name||''
+    });
+
+    document.getElementById('side_status').textContent='статья загружена';
+    goto(9);
+  }catch(error){
+    alert('Не удалось загрузить статью:\n\n'+String(error.message||error));
+  }finally{
+    setButtonBusy(button,false);
+  }
+}
+
+document.getElementById('generated_outline').addEventListener('input',()=>{
+  document.getElementById('generated_outline').dataset.approved='N';
+});
+
+document.querySelectorAll('[data-action]').forEach(button=>{
+  button.addEventListener('click',async()=>{
+    const action=button.dataset.action;
+
+    try{
+      if(action==='build_brief'){buildBrief();return;}
+      if(action==='search_context'){searchRelatedArticles();return;}
+      if(action==='build_external_task'){buildExternalTask();return;}
+      if(action==='load_external_text'){loadExternalText();return;}
+      if(action==='build_layout_task'){buildLayoutTask();return;}
+      if(action==='load_dictionaries'){await refreshDictionaries(button);return;}
+      if(action==='load_existing_article'){await loadExistingArticle(button);return;}
+      if(action==='research_sources'){await runResearchSources(button);return;}
+      if(action==='generate_outline'){await runGenerateOutline(button);return;}
+      if(action==='approve_outline'){await runApproveOutline(button);return;}
+      if(action==='generate_article'){await runGenerateArticle(button);return;}
+      if(action==='extract_med_questions'){await runExtractMedQuestions(button);return;}
+      if(action==='apply_med_answers'){await runApplyMedAnswers(button);return;}
+      if(action==='validate_article'){await runValidateArticle(button);return;}
+      if(action==='revise_article'){await runReviseArticle(button);return;}
+
+      if(action==='download_xml'||action==='create_bitrix_draft'){
+        await callN8n(action,actionPayload(),button);
+        return;
+      }
+
+      alert('Для действия пока нет обработчика: '+action);
+    }catch(_){
+      // Сообщение уже показано в обработчике.
+    }
+  });
+});
+
+logAction('Интерфейс инициализирован');
+Promise.all([
+  loadArticleStructures(),
+  loadBootstrapData()
+]).then(()=>{
+  const counts=document.getElementById('apiCounts');
+  if(counts&&counts.textContent.includes('Загрузка')){
+    counts.innerHTML='<span>Справочники загружены</span>';
+  }
+});
+
+/* ===================== v2: генерация, медредактура, вёрстка, тема ===================== */
+
+/* ---- тема (в памяти; при встраивании в веб-приложение добавить сохранение) ---- */
+const themeBtn=document.getElementById('themeBtn');
+let theme='light';
+try{ if(window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches) theme='dark'; }catch(e){}
+function applyTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  themeBtn.textContent=t==='dark'?'☀':'☾';
+  themeBtn.title=t==='dark'?'Светлая тема':'Тёмная тема';
+}
+applyTheme(theme);
+themeBtn.addEventListener('click',()=>{theme=theme==='dark'?'light':'dark';applyTheme(theme);logAction('Переключена тема: '+theme);});
+
+/* ---- способ генерации ---- */
+const genSeg=document.getElementById('genSeg');
+if(genSeg){
+  genSeg.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
+    genSeg.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on');
+    const m=b.dataset.genmode;
+    document.getElementById('generation_mode').value=m;
+    document.getElementById('panelBuiltin').classList.toggle('on',m==='builtin');
+    document.getElementById('panelExternal').classList.toggle('on',m==='external');
+    logAction('Способ генерации: '+(m==='builtin'?'встроенный ассистент':'внешний ассистент'));
+  }));
+}
+
+/* ---- пакет задания для внешнего ассистента ---- */
+const YMYL_SHORT=[
+ 'Статья от имени врача клиники (специализация и стаж указываются).',
+ 'Обязателен дисклеймер: материал информационный, имеются противопоказания, нужна консультация специалиста.',
+ 'Цифры и медицинские утверждения — только с источником (гайдлайны, PubMed). Без источника цифру не приводить.',
+ 'Запрещены заочные диагнозы и назначения читателю.',
+ 'Запрещены гарантии результата лечения.',
+ 'Если тема допускает опасные состояния — обязателен блок «когда обращаться к врачу срочно».'
+];
+function buildExternalTask(){
+  const brief=buildBrief();
+  const s=STRUCTURES.find(x=>x.id===brief.search_task.article_structure);
+  const raw=s&&s.raw?s.raw:null;
+  const sharedRules=STRUCTURES_SOURCE.shared_ymyl_rules||{};
+  const lines=[];
+
+  lines.push('# ЗАДАНИЕ ДЛЯ ИИ-АССИСТЕНТА · SEO-статья клиники TEMED');
+  lines.push('');
+  lines.push('## Роль');
+  lines.push('Ты — медицинский редактор клиники TEMED. Подготовь статью строго по техническому заданию и выбранной конфигурации.');
+  lines.push('');
+  lines.push('## Общие медицинские правила');
+
+  const sharedEntries=Object.entries(sharedRules).filter(([key])=>key!=='note');
+
+  if(sharedEntries.length){
+    sharedEntries.forEach(([,value])=>lines.push('- '+value));
+  }else{
+    YMYL_SHORT.forEach(rule=>lines.push('- '+rule));
+  }
+
+  lines.push('');
+
+  if(raw){
+    lines.push('## Выбранная структура');
+    lines.push(JSON.stringify(raw,null,2));
+  }else{
+    lines.push('## Структура не выбрана');
+    lines.push('Вернитесь на шаг «Поисковая задача» и выберите структуру статьи.');
+  }
+
+  lines.push('');
+  lines.push('## Техническое задание');
+  lines.push(JSON.stringify(brief,null,2));
+  lines.push('');
+  lines.push('## Формат результата');
+  lines.push('Верни один JSON-объект со следующими полями:');
+  lines.push('- name — название статьи;');
+  lines.push('- code — символьный код URL;');
+  lines.push('- seo_title — SEO title;');
+  lines.push('- meta_description — meta description;');
+  lines.push('- preview_text — анонс;');
+  lines.push('- short_answer — краткий ответ;');
+  lines.push('- detail_html — полный текст статьи в HTML;');
+  lines.push('- sources — массив использованных источников;');
+  lines.push('- medical_review_questions — массив формулировок и вопросов, требующих подтверждения врача.');
+  lines.push('');
+  lines.push('Не добавляй пояснений до или после JSON.');
+
+  const pkg=lines.join('\\n');
+
+  document.getElementById('externalTaskPreview').textContent=pkg;
+
+  logAction('Сформирован пакет задания для внешнего ассистента',{
+    structure:s?s.id:null,
+    structure_version:s?s.v:null,
+    length:pkg.length
+  });
+
+  return pkg;
+}
+
+/* ---- загрузка внешнего текста ---- */
+function loadExternalText(){
+  const t=document.getElementById('external_generated_text').value.trim();
+  if(!t){alert('Поле пустое: вставьте текст, полученный от внешнего ассистента.');return;}
+  document.getElementById('result_detail_html').value=t;
+  document.getElementById('side_status').textContent='текст загружен (внешний ассистент)';
+  logAction('Текст внешнего ассистента загружен в результат',{chars:t.length});
+  goto(9);
+}
+
+/* ---- шаблоны вёрстки ---- */
+const TEMPLATES=[
+ {id:'default',name:'Default',desc:'Стандартная статья temed.ru: оглавление, блок автора, контент, FAQ, источники, форма записи',ready:true},
+ {id:'longread',name:'Longread',desc:'Расширенный лонгрид с врезками, якорной навигацией и иллюстрациями',ready:false},
+ {id:'compare',name:'Compare',desc:'Сравнительный шаблон: сводная таблица и карточки методов',ready:false}
+];
+const tplCards=document.getElementById('tplCards');
+function renderTemplates(){
+  if(!tplCards)return;
+  tplCards.innerHTML='';
+  TEMPLATES.forEach(t=>{
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='struct-card'+(t.ready?'':' tpl-off');
+    b.dataset.tid=t.id;
+    b.innerHTML=`<div class="sn">${t.name}</div><div class="sid">${t.id}</div><div class="sw">${t.desc}</div><div class="sm">${t.ready?'Доступен':'Нет в API — скоро'}</div>`;
+    if(t.ready)b.addEventListener('click',()=>selectTemplate(t.id));
+    tplCards.appendChild(b);
+  });
+}
+function renderTemplatesFromApi(items){
+  if(!Array.isArray(items)||!items.length) return;
+
+  TEMPLATES.length=0;
+  items.forEach(item=>{
+    TEMPLATES.push({
+      id:item.value||item.xml_id||String(item.id),
+      name:item.value||item.xml_id||String(item.id),
+      desc:'Шаблон из справочника TEMED SEO API',
+      ready:true
+    });
+  });
+
+  renderTemplates();
+
+  const selected=document.getElementById('article_template').value;
+  if(selected&&TEMPLATES.some(item=>item.id===selected)){
+    selectTemplate(selected);
+  }else if(TEMPLATES[0]){
+    selectTemplate(TEMPLATES[0].id);
+  }
+}
+
+function selectTemplate(tid){
+  tplCards.querySelectorAll('.struct-card').forEach(x=>x.classList.toggle('on',x.dataset.tid===tid));
+  document.getElementById('layout_template').value=tid;
+  const sel=document.getElementById('article_template');
+  if(sel && [...sel.options].some(o=>o.value===tid)) sel.value=tid;
+  logAction('Выбран шаблон вёрстки: '+tid);
+}
+renderTemplates();
+selectTemplate('default');
+
+/* ---- задание на вёрстку ---- */
+function buildLayoutTask(){
+  const d=formToObject();
+  if(!d.layout_template){alert('Выберите шаблон страницы.');return;}
+  const html=d.result_detail_html||'';
+  const task={
+    task_type:'layout',
+    template:d.layout_template,
+    article:{
+      name:d.result_name||'',
+      code:d.result_code||'',
+      seo_title:d.result_seo_title||'',
+      meta_description:d.result_meta_description||'',
+      preview:d.result_preview||'',
+      short_answer:d.result_short_answer||''
+    },
+    content:{
+      html_chars:html.length,
+      h2_count:(html.match(/<h2/gi)||[]).length,
+      has_tables:/<table/i.test(html),
+      sources_lines:(d.result_sources||'').split('\n').filter(Boolean).length,
+      related_lines:(d.result_related_articles||'').split('\n').filter(Boolean).length
+    },
+    author:doctorContext(d.author_id),
+    medical_reviewer:doctorContext(d.medical_reviewer_id),
+    section:{
+      id:d.article_section_id||'',
+      name:d.article_section||'',
+      code:d.article_section_code||''
+    },
+    clinic:genericContext(APP_DATA.clinics,d.clinic_id),
+    service:genericContext(APP_DATA.services,d.service_id),
+    available_html_blocks:Array.isArray(APP_DATA.dictionaries.html_blocks)
+      ? APP_DATA.dictionaries.html_blocks
+      : [],
+    available_forms:Array.isArray(APP_DATA.dictionaries.forms)
+      ? APP_DATA.dictionaries.forms
+      : [],
+    notes:d.layout_notes||'',
+    checklist:[
+      'Собрать страницу по шаблону '+d.layout_template,
+      'Проставить блок автора и проверяющего врача',
+      'Оглавление по h2/h3',
+      'Блок «Краткий ответ» — сразу после первого экрана',
+      'FAQ с разметкой FAQPage (если есть)',
+      'Источники — нумерованным списком в конце',
+      'Перелинковка: связанные статьи из задания',
+      'Дисклеймер в подвале статьи'
+    ]
+  };
+  document.getElementById('layout_task').value=JSON.stringify(task,null,2);
+  logAction('Сформировано задание на вёрстку',{template:d.layout_template});
+}
+
+/* ---- копирование ---- */
+document.querySelectorAll('[data-copy]').forEach(btn=>{
+  btn.addEventListener('click',()=>{
+    const el=document.getElementById(btn.dataset.copy);
+    const text=('value'in el&&el.tagName!=='PRE')?el.value:el.textContent;
+    if(!text||!text.trim()){alert('Нечего копировать — поле пустое.');return;}
+    const done=()=>{const old=btn.textContent;btn.textContent='Скопировано ✓';setTimeout(()=>btn.textContent=old,1500);logAction('Скопировано в буфер: '+btn.dataset.copy,{chars:text.length});};
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(()=>fallbackCopy(text,done));
+    }else fallbackCopy(text,done);
+  });
+});
+function fallbackCopy(text,done){
+  const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);
+  ta.select();try{document.execCommand('copy');done();}catch(e){alert('Не удалось скопировать — выделите и скопируйте вручную.');}
+  document.body.removeChild(ta);
+}

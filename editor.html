@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Генератор SEO-статей · TEMED</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/css/editor.css?v=1.0.0">
+
+</head>
+<body>
+<div class="app">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">TEMED · SEO</div>
+      <div class="sub">Генератор статей</div>
+    </div>
+
+    <div class="phase">Задание</div>
+    <button class="navstep current" data-step="0"><span class="dot"><span>1</span></span>Начало работы</button>
+    <button class="navstep" data-step="1"><span class="dot"><span>2</span></span>Поисковая задача</button>
+    <button class="navstep" data-step="2"><span class="dot"><span>3</span></span>Размещение и автор</button>
+
+    <div class="phase">Подготовка</div>
+    <button class="navstep" data-step="3"><span class="dot"><span>4</span></span>Контекст TEMED</button>
+    <button class="navstep" data-step="4"><span class="dot"><span>5</span></span>Внешние источники</button>
+    <button class="navstep" data-step="5"><span class="dot"><span>6</span></span>Указания генератору</button>
+
+    <div class="phase">Генерация</div>
+    <button class="navstep" data-step="6"><span class="dot"><span>7</span></span>Задание и план</button>
+    <button class="navstep" data-step="7"><span class="dot"><span>8</span></span>Генерация текста</button>
+    <button class="navstep" data-step="8"><span class="dot"><span>9</span></span>Медредактура</button>
+
+    <div class="phase">Выпуск</div>
+    <button class="navstep" data-step="9"><span class="dot"><span>10</span></span>Результат</button>
+    <button class="navstep" data-step="10"><span class="dot"><span>11</span></span>Проверка</button>
+    <button class="navstep" data-step="11"><span class="dot"><span>12</span></span>Вёрстка</button>
+    <button class="navstep" data-step="12"><span class="dot"><span>13</span></span>Сохранение</button>
+    <button class="navstep" data-step="13"><span class="dot"><span>14</span></span>Журнал</button>
+
+    <div class="side-foot">
+      <div class="st">ID генерации</div>
+      <div class="val" id="side_gen_id">—</div>
+      <div class="st util-mt-10">Статус</div>
+      <div class="val" id="side_status">черновик задания</div>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <div class="main">
+    <div class="topbar">
+      <span class="tname" id="topTaskName">Новая задача</span>
+      <button type="button" class="themebtn" id="themeBtn" title="Переключить тему">☾</button>
+      <span class="badge mode" id="topMode">Новая статья</span>
+      <span class="badge draft" id="topStructBadge">структура не выбрана</span>
+    </div>
+
+    <form id="articleForm" class="content" onsubmit="return false">
+    <!-- ========== STEP 0: Начало работы ========== -->
+    <section class="step on" data-step="0">
+      <div class="step-head">
+        <h2>Начало работы</h2>
+        <p>Выберите режим и назовите задачу. При переработке система загрузит исходную статью через n8n и TEMED SEO API.</p>
+      </div>
+      <div class="card">
+        <div class="field">
+          <label>Режим работы</label>
+          <div class="seg" id="modeSeg">
+            <button type="button" data-mode="new" class="on">Новая статья</button>
+            <button type="button" data-mode="rework">Переработка существующей</button>
+          </div>
+          <input type="hidden" id="workflow_mode" name="workflow_mode" value="new">
+        </div>
+        <div class="field is-hidden" id="existingArticleField">
+          <label for="existing_article_id">Существующая статья</label>
+          <div class="row2">
+            <select id="existing_article_selector">
+              <option value="">Загрузка списка статей…</option>
+            </select>
+            <button type="button" class="btn" data-action="load_existing_article">Загрузить статью</button>
+          </div>
+          <input type="hidden" id="existing_article_id" name="existing_article_id">
+          <input type="hidden" id="existing_article_source" name="existing_article_source">
+          <div class="hint sys">Список новых и старых статей загружается через TEMED SEO API.</div>
+        </div>
+        <div class="field">
+          <label for="task_name">Рабочее название задачи</label>
+          <input id="task_name" name="task_name" type="text" placeholder="Внутреннее название — не обязательно заголовок статьи">
+        </div>
+        <div class="api-counts" id="apiCounts">
+          <span>Загрузка справочников…</span>
+        </div>
+      </div>
+      <div class="stepnav"><span></span><button type="button" class="btn primary" data-nav="next">Далее: поисковая задача →</button></div>
+    </section>
+
+    <!-- ========== STEP 1: Поисковая задача ========== -->
+    <section class="step" data-step="1">
+      <div class="step-head">
+        <h2>Поисковая задача</h2>
+        <p>Тема, запросы, интент и структура. Выбор интента фильтрует доступные структуры; версия структуры сохраняется для сравнения эффективности.</p>
+      </div>
+
+      <div class="card">
+        <h3>Тема и запросы</h3>
+        <div class="field">
+          <label for="topic">Тема статьи</label>
+          <textarea id="topic" name="topic" rows="2" placeholder="О чём должна быть статья"></textarea>
+        </div>
+        <div class="field">
+          <label for="primary_query">Основной поисковый запрос</label>
+          <input id="primary_query" name="primary_query" type="text" placeholder="Главный запрос, под который формируется статья">
+        </div>
+        <div class="field">
+          <label for="secondary_queries">Дополнительные запросы <span class="label-note">— один на строку</span></label>
+          <textarea id="secondary_queries" name="secondary_queries" rows="4" placeholder="связанные формулировки&#10;уточняющие запросы"></textarea>
+        </div>
+        <div class="row3">
+          <div class="field">
+            <label for="article_type">Тип статьи</label>
+            <select id="article_type" name="article_type">
+              <option value="">Загрузка справочника…</option>
+            </select>
+            <input type="hidden" id="article_type_id" name="article_type_id">
+            <input type="hidden" id="article_type_xml_id" name="article_type_xml_id">
+          </div>
+          <div class="field">
+            <label for="region">Регион <span class="label-note">(только для региональной)</span></label>
+            <select id="region" name="region">
+              <option value="">— не выбран —</option>
+            </select>
+            <input type="hidden" id="region_id" name="region_id">
+            <input type="hidden" id="region_xml_id" name="region_xml_id">
+          </div>
+          <div class="field">
+            <label for="length_target">Желаемый объём</label>
+            <input id="length_target" name="length_target" type="text" placeholder="напр. 6000–8000 знаков">
+          </div>
+        </div>
+        <div class="field">
+          <label for="reader_goal">Что должен получить читатель</label>
+          <textarea id="reader_goal" name="reader_goal" rows="3" placeholder="Ожидаемый результат чтения статьи"></textarea>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>Интент и структура</h3>
+        <div class="intents" id="intentCards">
+          <button type="button" class="intent-card" data-intent="informational">
+            <div class="in">Информационный</div>
+            <div class="id">Человек хочет разобраться в теме, симптоме, диагнозе или методе</div>
+          </button>
+          <button type="button" class="intent-card" data-intent="commercial_informational">
+            <div class="in">Коммерческо-информационный</div>
+            <div class="id">Изучает тему и одновременно выбирает лечение, врача или клинику</div>
+          </button>
+          <button type="button" class="intent-card" data-intent="comparative">
+            <div class="in">Сравнительный</div>
+            <div class="id">Сравнивает методы, варианты лечения, процедуры или подходы</div>
+          </button>
+        </div>
+        <input type="hidden" id="search_intent" name="search_intent">
+        <div class="structs" id="structCards">
+          <div class="struct-empty">Выберите интент, чтобы увидеть доступные структуры</div>
+        </div>
+        <input type="hidden" id="article_structure" name="article_structure">
+        <input type="hidden" id="article_structure_name" name="article_structure_name">
+        <input type="hidden" id="article_structure_version" name="article_structure_version">
+        <div class="struct-detail" id="structDetail"></div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: размещение и автор →</button></div>
+    </section>
+
+    <!-- ========== STEP 2: Размещение и автор ========== -->
+    <section class="step" data-step="2">
+      <div class="step-head">
+        <h2>Размещение и автор</h2>
+        <p>Куда встанет статья и кто за ней стоит. Список разделов и врачей приходит из TEMED SEO API.</p>
+      </div>
+      <div class="card">
+        <h3>Размещение</h3>
+        <div class="row2">
+          <div class="field">
+            <label for="article_section_id">Раздел сайта</label>
+            <select id="article_section_id" name="article_section_id">
+              <option value="">Загрузка разделов…</option>
+            </select>
+            <input type="hidden" id="article_section" name="article_section">
+            <input type="hidden" id="article_section_code" name="article_section_code">
+            <div class="hint sys">Разделы нового инфоблока загружаются через API.</div>
+          </div>
+          <div class="field">
+            <label for="article_template">Шаблон страницы</label>
+            <select id="article_template" name="article_template">
+              <option value="default">default</option>
+            </select>
+            <input type="hidden" id="article_template_id" name="article_template_id">
+            <input type="hidden" id="article_template_xml_id" name="article_template_xml_id">
+          </div>
+        </div>
+        <div class="field is-hidden" id="newSectionField">
+          <label for="new_article_section">Название нового раздела</label>
+          <input id="new_article_section" name="new_article_section" type="text" placeholder="Новый раздел будет создан позднее отдельным write-процессом">
+        </div>
+      </div>
+      <div class="card">
+        <h3>Автор и медицинская проверка</h3>
+        <div class="row2">
+          <div class="field">
+            <label for="author_id">Автор статьи (врач)</label>
+            <input id="author_search" type="text" list="authorDoctorList" autocomplete="off"
+                   placeholder="Начните вводить фамилию врача">
+            <datalist id="authorDoctorList"></datalist>
+            <input type="hidden" id="author_id" name="author_id">
+            <input type="hidden" id="author" name="author">
+            <div class="api-info" id="authorInfo"></div>
+          </div>
+          <div class="field">
+            <label for="medical_reviewer_id">Проверяющий врач</label>
+            <input id="medical_reviewer_search" type="text" list="reviewerDoctorList" autocomplete="off"
+                   placeholder="Начните вводить фамилию врача">
+            <datalist id="reviewerDoctorList"></datalist>
+            <input type="hidden" id="medical_reviewer_id" name="medical_reviewer_id">
+            <input type="hidden" id="medical_reviewer" name="medical_reviewer">
+            <div class="api-info" id="reviewerInfo"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="expert_material">Материал или комментарий врача</label>
+          <textarea id="expert_material" name="expert_material" rows="7" placeholder="Расшифровка, тезисы, клинический пример, позиция врача…"></textarea>
+          <div class="hint sys">Используется как приоритетный внутренний источник — смысл не меняется при генерации.</div>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: контекст TEMED →</button></div>
+    </section>
+
+    <!-- ========== STEP 3: Контекст TEMED ========== -->
+    <section class="step" data-step="3">
+      <div class="step-head">
+        <h2>Контекст из материалов TEMED</h2>
+        <p>Связанные статьи для перелинковки и внутренние факты клиники — то, чего генератор не должен выдумывать.</p>
+      </div>
+      <div class="card">
+        <h3>Клиника и услуга</h3>
+        <div class="row2">
+          <div class="field">
+            <label for="clinic_id">Клиника / филиал</label>
+            <select id="clinic_id" name="clinic_id">
+              <option value="">Загрузка клиник…</option>
+            </select>
+            <input type="hidden" id="clinic" name="clinic">
+            <div class="api-info" id="clinicInfo"></div>
+          </div>
+          <div class="field">
+            <label for="service_id">Основная услуга / метод</label>
+            <select id="service_id" name="service_id">
+              <option value="">Загрузка услуг…</option>
+            </select>
+            <input type="hidden" id="service" name="service">
+            <div class="api-info" id="serviceInfo"></div>
+          </div>
+        </div>
+        <div class="hint sys">Выбранные карточки передаются в задание как фактический контекст TEMED. Генератор не должен придумывать параметры услуги или филиала.</div>
+      </div>
+      <div class="card">
+        <h3>Связанные материалы</h3>
+        <div class="field">
+          <label for="context_search_query">Запрос для поиска материалов</label>
+          <div class="row2">
+            <input id="context_search_query" name="context_search_query" type="text" placeholder="Какие старые и новые статьи найти">
+            <button type="button" class="btn" data-action="search_context">Найти связанные материалы</button>
+          </div>
+        </div>
+        <div class="result-list" id="relatedSearchResults"></div>
+        <div class="field">
+          <label for="selected_related_articles">Выбранные связанные статьи</label>
+          <textarea id="selected_related_articles" name="selected_related_articles" rows="6" readonly placeholder="Выбранные материалы появятся здесь"></textarea>
+          <div class="selected-list" id="selectedRelatedList"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Факты и правила TEMED</h3>
+        <div class="callout warn"><b>Критично.</b> Реальные параметры процедур (число инъекций, длительность, наличие/отсутствие УЗИ и т. п.) генератор берёт только отсюда. Без этого поля он подставит среднерыночные цифры.</div>
+        <div class="field">
+          <textarea id="internal_facts" name="internal_facts" rows="7" placeholder="Внутренние стандарты, реальные параметры процедур, ограничения…"></textarea>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: внешние источники →</button></div>
+    </section>
+
+    <!-- ========== STEP 4: Внешние источники ========== -->
+    <section class="step" data-step="4">
+      <div class="step-head">
+        <h2>Внешние источники</h2>
+        <p>Исследовательский этап: n8n подбирает и проверяет источники, редактор утверждает итоговый список.</p>
+      </div>
+      <div class="card">
+        <div class="field">
+          <label for="source_requirements">Требования к источникам</label>
+          <textarea id="source_requirements" name="source_requirements" rows="3" placeholder="Какие источники допустимы, какая глубина проверки нужна"></textarea>
+        </div>
+        <div class="field">
+          <label for="provided_sources">Заранее известные источники <span class="label-note">— один на строку</span></label>
+          <textarea id="provided_sources" name="provided_sources" rows="5" placeholder="Клинические рекомендации, PubMed, документы…"></textarea>
+        </div>
+        <div class="btnrow btnrow-compact">
+          <button type="button" class="btn primary" data-action="research_sources">Подобрать и проверить источники</button>
+          <span class="hint sys hint-flush">n8n найдёт источники, проверит утверждения и вернёт список для подтверждения.</span>
+        </div>
+        <div class="field">
+          <label for="approved_sources">Утверждённые источники</label>
+          <textarea id="approved_sources" name="approved_sources" rows="5" placeholder="Только источники, разрешённые для статьи"></textarea>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: указания генератору →</button></div>
+    </section>
+
+    <!-- ========== STEP 5: Указания генератору ========== -->
+    <section class="step" data-step="5">
+      <div class="step-head">
+        <h2>Дополнительные указания генератору</h2>
+        <p>Поверх правил выбранной структуры и общих YMYL-требований.</p>
+      </div>
+      <div class="card">
+        <div class="row2">
+          <div class="field">
+            <label for="required_content">Что обязательно включить</label>
+            <textarea id="required_content" name="required_content" rows="6" placeholder="Обязательные тезисы, вопросы, блоки"></textarea>
+          </div>
+          <div class="field">
+            <label for="forbidden_content">Что нельзя писать</label>
+            <textarea id="forbidden_content" name="forbidden_content" rows="6" placeholder="Дополнительные запреты для этой статьи"></textarea>
+          </div>
+        </div>
+        <div class="field">
+          <label for="tone_notes">Особенности тона и подачи</label>
+          <textarea id="tone_notes" name="tone_notes" rows="3" placeholder="Особенности подачи для конкретной статьи"></textarea>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: задание и план →</button></div>
+    </section>
+
+    <!-- ========== STEP 6: Задание и план ========== -->
+    <section class="step" data-step="6">
+      <div class="step-head">
+        <h2>Задание и план статьи</h2>
+        <p>Соберите JSON-задание, проверьте его, получите план — и только после утверждения плана запускайте полную генерацию.</p>
+      </div>
+      <div class="card">
+        <h3>Техническое задание</h3>
+        <div class="btnrow mb-14">
+          <button type="button" class="btn" data-action="load_dictionaries">Обновить справочники</button>
+          <button type="button" class="btn primary" data-action="build_brief">Собрать техническое задание</button>
+        </div>
+        <pre class="json" id="briefPreview">Пока не сформировано. Нажмите «Собрать техническое задание».</pre>
+      </div>
+      <div class="card">
+        <h3>План статьи</h3>
+        <div class="btnrow mb-14">
+          <button type="button" class="btn primary" data-action="generate_outline">Сформировать план статьи</button>
+          <button type="button" class="btn" data-action="approve_outline">Утвердить план</button>
+        </div>
+        <div class="field">
+          <label for="generated_outline">План — можно переставлять, удалять и добавлять блоки</label>
+          <textarea id="generated_outline" name="generated_outline" rows="12" class="code"></textarea>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: генерация текста →</button></div>
+    </section>
+
+    <!-- ========== STEP 7: Генерация текста ========== -->
+    <section class="step" data-step="7">
+      <div class="step-head">
+        <h2>Генерация текста</h2>
+        <p>Встроенный ассистент пишет прямо в приложении. Внешний — по переносимому пакету задания, готовый текст вставляется вручную.</p>
+      </div>
+      <div class="card">
+        <div class="field">
+          <label>Способ генерации</label>
+          <div class="seg" id="genSeg">
+            <button type="button" data-genmode="builtin" class="on">Встроенный ассистент</button>
+            <button type="button" data-genmode="external">Внешний ассистент</button>
+          </div>
+          <input type="hidden" id="generation_mode" name="generation_mode" value="builtin">
+        </div>
+      </div>
+
+      <div class="genpanel on" id="panelBuiltin">
+        <div class="card">
+          <h3>Встроенный ассистент</h3>
+          <div class="callout info"><b>Автоматический контур.</b> Ассистент подключён к веб-приложению: задание, структура, контекст и источники передаются сами. Готовый текст появится на шаге «Результат».</div>
+          <div class="btnrow">
+            <button type="button" class="btn primary" data-action="generate_article">Сгенерировать статью</button>
+            <span class="hint sys hint-flush">Запрос выполняется через защищённый серверный proxy.php.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="genpanel" id="panelExternal">
+        <div class="card">
+          <h3>Задание для внешнего ассистента</h3>
+          <div class="btnrow mb-14">
+            <button type="button" class="btn primary" data-action="build_external_task">Сформировать пакет задания</button>
+          </div>
+          <div class="copyrow">
+            <label>Пакет задания — скопируйте целиком во внешний ассистент</label>
+            <button type="button" class="btn ghost" data-copy="externalTaskPreview">Копировать</button>
+          </div>
+          <pre class="json" id="externalTaskPreview">Нажмите «Сформировать пакет задания».</pre>
+        </div>
+        <div class="card">
+          <h3>Загрузка готового текста</h3>
+          <div class="field">
+            <label for="external_generated_text">Текст от внешнего ассистента</label>
+            <textarea id="external_generated_text" name="external_generated_text" rows="12" class="code" placeholder="Вставьте полный текст статьи, полученный от внешнего ассистента…"></textarea>
+          </div>
+          <div class="btnrow">
+            <button type="button" class="btn primary" data-action="load_external_text">Загрузить текст в результат</button>
+            <span class="hint sys hint-flush">Текст попадёт в поле «HTML статьи» на шаге «Результат».</span>
+          </div>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: медредактура →</button></div>
+    </section>
+
+    <!-- ========== STEP 8: Медредактура ========== -->
+    <section class="step" data-step="8">
+      <div class="step-head">
+        <h2>Медредактура</h2>
+        <p>Ассистент собирает из текста спорные формулировки и вопросы для врача. Врач отвечает, ответы возвращаются в текст точечно.</p>
+      </div>
+      <div class="card">
+        <h3>Вопросы для медредактора</h3>
+        <div class="btnrow mb-14">
+          <button type="button" class="btn primary" data-action="extract_med_questions">Получить вопросы для медредактора</button>
+          <button type="button" class="btn ghost" data-copy="med_questions">Копировать вопросы</button>
+        </div>
+        <div class="field">
+          <label for="med_questions">Формулировки и вопросы, требующие подтверждения врача</label>
+          <textarea id="med_questions" name="med_questions" rows="10" class="code" placeholder="Пронумерованный список: утверждение → вопрос к врачу → варианты формулировки…"></textarea>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Ответы врача</h3>
+        <div class="field">
+          <label for="med_answers">Ответы и правки медредактора</label>
+          <textarea id="med_answers" name="med_answers" rows="10" placeholder="Вставьте ответы врача по пунктам: согласовано / заменить на … / удалить…"></textarea>
+        </div>
+        <div class="btnrow">
+          <button type="button" class="btn primary" data-action="apply_med_answers">Загрузить ответы и получить финальный текст</button>
+          <span class="hint sys hint-flush">Меняются только согласованные формулировки — остальной текст не трогается.</span>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: результат →</button></div>
+    </section>
+
+    <!-- ========== STEP 9: Результат ========== -->
+    <section class="step" data-step="9">
+      <div class="step-head">
+        <h2>Результат генерации</h2>
+        <p>Проверьте и отредактируйте всё, что уйдёт в Bitrix. Ничего не публикуется автоматически.</p>
+      </div>
+      <div class="card">
+        <h3>Мета и служебные поля</h3>
+        <div class="result-meta">
+          <div class="field">
+            <label for="result_name">Название статьи</label>
+            <input id="result_name" name="result_name" type="text">
+          </div>
+          <div class="field">
+            <label for="result_code">Символьный код URL</label>
+            <input id="result_code" name="result_code" type="text" class="mono">
+          </div>
+          <div class="field">
+            <label for="result_seo_title">SEO title</label>
+            <input id="result_seo_title" name="result_seo_title" type="text">
+          </div>
+          <div class="field">
+            <label for="result_meta_description">Meta description</label>
+            <textarea id="result_meta_description" name="result_meta_description" rows="3"></textarea>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field">
+            <label for="result_preview">Анонс</label>
+            <textarea id="result_preview" name="result_preview" rows="4"></textarea>
+          </div>
+          <div class="field">
+            <label for="result_short_answer">Краткий ответ</label>
+            <textarea id="result_short_answer" name="result_short_answer" rows="4"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Текст статьи</h3>
+        <div class="field">
+          <label for="result_detail_html">HTML статьи</label>
+          <textarea id="result_detail_html" name="result_detail_html" rows="22" class="code"></textarea>
+        </div>
+      </div>
+      <div class="card">
+        <div class="row2">
+          <div class="field">
+            <label for="result_sources">Источники статьи</label>
+            <textarea id="result_sources" name="result_sources" rows="6"></textarea>
+          </div>
+          <div class="field">
+            <label for="result_related_articles">Связанные статьи</label>
+            <textarea id="result_related_articles" name="result_related_articles" rows="6"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: проверка →</button></div>
+    </section>
+
+    <!-- ========== STEP 10: Проверка ========== -->
+    <section class="step" data-step="10">
+      <div class="step-head">
+        <h2>Проверка результата</h2>
+        <p>Автопроверка обязательных блоков, запрещённых формулировок, медицинских утверждений, источников и HTML.</p>
+      </div>
+      <div class="card">
+        <div class="btnrow mb-14">
+          <button type="button" class="btn primary" data-action="validate_article">Проверить статью</button>
+        </div>
+        <div class="field">
+          <label for="validation_report">Отчёт проверки</label>
+          <textarea id="validation_report" name="validation_report" rows="10" class="code"></textarea>
+        </div>
+        <div class="field">
+          <label for="revision_request">Что нужно переработать</label>
+          <textarea id="revision_request" name="revision_request" rows="4" placeholder="Замечания по конкретным блокам"></textarea>
+        </div>
+        <div class="btnrow">
+          <button type="button" class="btn" data-action="revise_article">Переработать по замечаниям</button>
+          <span class="hint sys hint-flush">Меняются только указанные части — статья не генерируется заново без необходимости.</span>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: вёрстка →</button></div>
+    </section>
+
+    <!-- ========== STEP 11: Вёрстка ========== -->
+    <section class="step" data-step="11">
+      <div class="step-head">
+        <h2>Задание на вёрстку</h2>
+        <p>Выберите шаблон из доступных и сформируйте задание. Реестр шаблонов загружается из API — сейчас доступен default.</p>
+      </div>
+      <div class="card">
+        <h3>Шаблон страницы</h3>
+        <div class="structs" id="tplCards"></div>
+        <input type="hidden" id="layout_template" name="layout_template" value="">
+        <div class="field mt-16">
+          <label for="layout_notes">Замечания к вёрстке</label>
+          <textarea id="layout_notes" name="layout_notes" rows="3" placeholder="Особые требования: врезки, баннеры, формы записи, позиция FAQ…"></textarea>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Задание</h3>
+        <div class="btnrow mb-14">
+          <button type="button" class="btn primary" data-action="build_layout_task">Сформировать задание на вёрстку</button>
+          <button type="button" class="btn ghost" data-copy="layout_task">Копировать</button>
+        </div>
+        <div class="field">
+          <label for="layout_task">Задание для верстальщика / сборщика страницы</label>
+          <textarea id="layout_task" name="layout_task" rows="12" class="code"></textarea>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: сохранение →</button></div>
+    </section>
+
+    <!-- ========== STEP 12: Сохранение ========== -->
+    <section class="step" data-step="12">
+      <div class="step-head">
+        <h2>Сохранение</h2>
+        <p>Два сценария выпуска. Пока действует первый — безопасный, без прав записи в Bitrix.</p>
+      </div>
+      <div class="card">
+        <div class="callout info"><b>Сценарий 1 (текущий).</b> Система формирует XML, вы скачиваете его и импортируете в Bitrix вручную. Права записи не выдаются.</div>
+        <div class="btnrow mb-18">
+          <button type="button" class="btn primary" data-action="download_xml">Сформировать XML для импорта</button>
+        </div>
+        <div class="callout warn"><b>Сценарий 2 (будущий).</b> n8n через отдельный write-API создаёт только <i>неактивный</i> черновик в инфоблоке 81.</div>
+        <div class="btnrow mb-18">
+          <button type="button" class="btn" data-action="create_bitrix_draft">Создать неактивный черновик в Bitrix</button>
+        </div>
+        <div class="field">
+          <label for="save_result">Результат сохранения</label>
+          <textarea id="save_result" name="save_result" rows="5" class="code"></textarea>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Журнал →</button></div>
+    </section>
+
+    <!-- ========== STEP 13: Журнал ========== -->
+    <section class="step" data-step="13">
+      <div class="step-head">
+        <h2>Техническая информация</h2>
+        <p>Служебные данные генерации и журнал действий для диагностики.</p>
+      </div>
+      <div class="card">
+        <div class="row2">
+          <div class="field">
+            <label for="generation_id">ID генерации</label>
+            <input id="generation_id" name="generation_id" type="text" readonly class="mono">
+          </div>
+          <div class="field">
+            <label for="generation_status">Статус</label>
+            <input id="generation_status" name="generation_status" type="text" readonly>
+          </div>
+        </div>
+        <div class="field">
+          <label for="action_log">Журнал действий <span class="label-note">— при ошибке скопируйте для диагностики</span></label>
+          <textarea id="action_log" name="action_log" rows="14" class="log" readonly></textarea>
+        </div>
+      </div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><span></span></div>
+    </section>
+    </form>
+  </div>
+</div>
+<script src="assets/js/editor.js?v=1.0.0"></script>
+
+</body>
+</html>
