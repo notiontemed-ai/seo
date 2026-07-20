@@ -205,6 +205,45 @@ if ($html === false) {
     exit('Не удалось прочитать editor.html.');
 }
 
+$cssFile = __DIR__ . '/assets/css/editor.css';
+$jsFile = __DIR__ . '/assets/js/editor.js';
+
+function assetVersion(string $file): string
+{
+    if (!is_file($file) || !is_readable($file)) {
+        return '';
+    }
+
+    $hash = hash_file('sha256', $file);
+
+    if (!is_string($hash) || $hash === '') {
+        return '';
+    }
+
+    return substr($hash, 0, 12);
+}
+
+$cssVersion = assetVersion($cssFile);
+$jsVersion = assetVersion($jsFile);
+
+if ($cssVersion === '' || $jsVersion === '') {
+    error_log('TEMED SEO Editor asset file is unavailable or unreadable.');
+    http_response_code(500);
+    exit('Файлы интерфейса редактора недоступны.');
+}
+
+$html = str_replace(
+    [
+        '__EDITOR_CSS_VERSION__',
+        '__EDITOR_JS_VERSION__',
+    ],
+    [
+        htmlspecialchars($cssVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+        htmlspecialchars($jsVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
+    ],
+    $html
+);
+
 $logout = <<<'HTML'
 <a
     href="?logout=1"
