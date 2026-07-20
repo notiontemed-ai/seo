@@ -241,11 +241,27 @@ if (!function_exists('curl_init')) {
 
 
 if ($requestMethod === 'POST') {
-    $rawBodyForRoute = file_get_contents('php://input');
-    $routePayload = json_decode((string)$rawBodyForRoute, true);
-    if (is_array($routePayload) && ($routePayload['action'] ?? '') === 'check_internal_uniqueness') {
-        $article = is_array($routePayload['article'] ?? null) ? $routePayload['article'] : [];
-        $encodedApiPayload = json_encode(['action' => 'internal_uniqueness', 'article' => $article], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $rawBody = file_get_contents('php://input');
+
+    if ($rawBody === false || trim($rawBody) === '') {
+        proxySendJson(['success' => false, 'error' => 'Пустое тело запроса'], 400);
+    }
+
+    $requestPayload = json_decode($rawBody, true);
+
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($requestPayload)) {
+        proxySendJson(['success' => false, 'error' => 'Тело запроса должно быть корректным JSON'], 400);
+    }
+
+    if (($requestPayload['action'] ?? '') === 'check_internal_uniqueness') {
+        $article = is_array($requestPayload['article'] ?? null) ? $requestPayload['article'] : [];
+        $exclude = [];
+        $source = (string)($requestPayload['existing_article_source'] ?? $requestPayload['exclude']['source'] ?? '');
+        $id = (int)($requestPayload['existing_article_id'] ?? $requestPayload['exclude']['element_id'] ?? 0);
+        if (in_array($source, ['new', 'legacy'], true) && $id > 0) {
+            $exclude = ['source' => $source, 'element_id' => $id];
+        }
+        $encodedApiPayload = json_encode(['action' => 'internal_uniqueness', 'article' => $article, 'exclude' => $exclude, 'options' => $requestPayload['options'] ?? []], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $curl = curl_init($apiUrl);
         curl_setopt_array($curl, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $encodedApiPayload, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 120, CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiToken, 'Content-Type: application/json', 'Accept: application/json']]);
         $body = curl_exec($curl);
@@ -264,33 +280,6 @@ if ($requestMethod === 'POST') {
                 'error' => 'В config.php не настроены n8n_base_url или n8n_secret',
             ],
             500
-        );
-    }
-
-    $rawBody = file_get_contents('php://input');
-
-    if ($rawBody === false || trim($rawBody) === '') {
-        proxySendJson(
-            [
-                'success' => false,
-                'error' => 'Пустое тело запроса',
-            ],
-            400
-        );
-    }
-
-    $requestPayload = json_decode($rawBody, true);
-
-    if (
-        json_last_error() !== JSON_ERROR_NONE
-        || !is_array($requestPayload)
-    ) {
-        proxySendJson(
-            [
-                'success' => false,
-                'error' => 'Тело запроса должно быть корректным JSON',
-            ],
-            400
         );
     }
 
@@ -349,6 +338,27 @@ if ($requestMethod === 'POST') {
     }
 
     unset($requestPayload['secret']);
+
+    if ($n8nAction === 'assistant_chat') {
+        $warnings = [];
+        $manifestResult = proxyApiRequest($apiUrl, $apiToken, ['action' => 'system_manifest']);
+        $structuresResult = proxyApiRequest($apiUrl, $apiToken, ['action' => 'article_structures']);
+        $dictResult = proxyApiRequest($apiUrl, $apiToken, ['action' => 'dictionaries']);
+        if (empty($manifestResult['ok']) || (($manifestResult['payload']['success'] ?? false) !== true)) {
+            $warnings[] = 'LIVE_SYSTEM_MANIFEST_UNAVAILABLE';
+        }
+        $dictData = $dictResult['payload']['data'] ?? [];
+        $summary = [];
+        foreach (is_array($dictData) ? $dictData : [] as $key => $value) {
+            $summary[$key] = is_array($value) ? count($value) : gettype($value);
+        }
+        $requestPayload['system_context'] = [
+            'manifest' => $manifestResult['payload']['data'] ?? null,
+            'structures' => $structuresResult['payload']['data'] ?? null,
+            'dictionaries_summary' => $summary,
+            'warnings' => $warnings,
+        ];
+    }
 
     $requestPayload['action'] = $n8nAction;
     $requestPayload['request_id'] = isset($requestPayload['request_id'])

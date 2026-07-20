@@ -1,5 +1,40 @@
 <?php
+
+declare(strict_types=1);
+
 return [
-    'bearer_token' => 'CHANGE_ME',
+    'read_token' => 'CHANGE_ME',
+
+    'base_url' => 'https://temed.ru',
+
+    'iblocks' => [
+        'articles' => 81,
+        'legacy_articles' => 68,
+        'doctors' => 65,
+        'prices' => 70,
+        'clinics' => 10,
+    ],
+
     'cache_ttl' => 3600,
+
+    'editor_version' => '1.2.0',
+
+    'deployed_commit' => '',
+
+    'html_blocks' => [
+        'short_answer',
+        'expert_opinion',
+        'important',
+        'info',
+        'clinical_case',
+        'checklist',
+        'table',
+        'quote',
+        'sources',
+        'related_articles',
+        'service_card',
+        'cta',
+    ],
+
+    'forms' => [],
 ];
