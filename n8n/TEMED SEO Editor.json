@@ -27,7 +27,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nconst action = String(body.action ?? '').trim();\nconst requestId = String(\n  body.request_id\n  ?? body.requestId\n  ?? `seo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nconst data = body.data ?? body.payload ?? body.brief ?? {};\n\nconst allowedActions = new Set([\n  'health',\n  'research_sources',\n  'generate_outline',\n  'generate_article',\n  'extract_med_questions',\n  'apply_med_answers',\n  'validate_article',\n  'revise_article',\n  'approve_outline',\n  'load_existing_article',\n  'load_dictionaries',\n  'assistant_chat',\n  'start_external_uniqueness',\n  'get_external_uniqueness',\n  'assistant_refresh_knowledge',\n  'create_bitrix_draft'\n]);\n\nfunction fail(errorCode, message, httpStatus = 400, details = {}) {\n  return [{\n    json: {\n      valid: false,\n      success: false,\n      action,\n      request_id: requestId,\n      error_code: errorCode,\n      message,\n      details,\n      http_status: httpStatus\n    }\n  }];\n}\n\nif (!allowedActions.has(action)) {\n  return fail(\n    'UNKNOWN_ACTION',\n    'Неизвестное действие.',\n    400,\n    { allowed_actions: [...allowedActions] }\n  );\n}\n\nconst generationId = String(\n  body.generation_id\n  ?? data.generation_id\n  ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nfunction compactJson(value) {\n  return JSON.stringify(value ?? {}, null, 2);\n}\n\nfunction articleFromPayload(payload) {\n  return payload.article\n    ?? payload.result\n    ?? payload.current_article\n    ?? {\n      name: payload.result_name ?? '',\n      code: payload.result_code ?? '',\n      seo_title: payload.result_seo_title ?? '',\n      meta_description: payload.result_meta_description ?? '',\n      preview_text: payload.result_preview ?? '',\n      short_answer: payload.result_short_answer ?? '',\n      detail_html: payload.result_detail_html ?? '',\n      sources: payload.result_sources ?? '',\n      related_articles: payload.result_related_articles ?? ''\n    };\n}\n\nconst commonRules = `\nТы — медицинский SEO-редактор сети клиник TEMED.\n\nОБЯЗАТЕЛЬНЫЕ ПРАВИЛА:\n1. Работай только с данными, переданными в JSON. Не придумывай факты о TEMED, врачах, клиниках, методах, ценах, длительности, количестве процедур и результатах.\n2. Внутренние факты TEMED и комментарии врача имеют приоритет. Их смысл нельзя менять.\n3. Не ставь заочный диагноз и не назначай лечение конкретному читателю.\n4. Не обещай результат и не используй гарантии эффективности.\n5. Числа и медицинские утверждения допускаются только при наличии указанного источника. Если источника нет, убери точное число или пометь утверждение как требующее проверки.\n6. Не выдумывай статьи, исследования, DOI, PMID, URL, клинические рекомендации или цитаты.\n7. Ответ возвращай только как один корректный JSON-объект без markdown и без пояснений вокруг JSON.\n8. Язык результата — русский.\n`;\n\nlet direct = false;\nlet response = null;\nlet prompt = '';\n\nif (action === 'health') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      status: 'ok',\n      workflow: 'TEMED SEO Editor v1',\n      ai_model: 'gpt-5.4-mini'\n    }\n  };\n}\n\nif (action === 'approve_outline') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      approved: true,\n      outline: data.generated_outline ?? data.outline ?? ''\n    }\n  };\n}\n\nif (action === 'load_existing_article' || action === 'load_dictionaries') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      handled_by: 'TEMED SEO PHP proxy',\n      message: 'Это действие выполняется напрямую через защищённый PHP proxy, без n8n.'\n    }\n  };\n}\n\n\nif (action === 'assistant_chat') {\n  direct = true;\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {answer: 'Ассистент подключён. Production workflow должен добавить модель и безопасный контекст.', mode: data.mode ?? 'article', sources: [{type: 'github', path: 'docs/assistant.md'}], suggestions: [], warnings: []}};\n}\n\nif (action === 'start_external_uniqueness') {\n  direct = true;\n  const text = String(data.text ?? '');\n  if (text.length < 100 || text.length > 150000) return fail('TEXT_LENGTH_INVALID', 'TEXT.RU принимает текст 100–150000 символов.', 422);\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {status: 'processing', provider: 'text_ru', provider_uid: 'TEXT_RU_UID_FROM_CREDENTIAL_FLOW', content_hash: 'sha256-placeholder', started_at: new Date().toISOString()}};\n}\n\nif (action === 'get_external_uniqueness') {\n  direct = true;\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {status: 'processing', provider: 'text_ru', provider_uid: String(data.uid ?? ''), warnings: ['TEXT.RU code 181 is treated as processing.']}};\n}\n\nif (action === 'assistant_refresh_knowledge') {\n  direct = true;\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {status: 'scheduled', allowed_files: ['README.md', 'docs/**', 'internal/seo-editor/assets/js/**', 'n8n/TEMED SEO Editor.json']}};\n}\n\nif (action === 'create_bitrix_draft') {\n  direct = true;\n  response = {\n    success: false,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    error_code: 'WRITE_API_DISABLED',\n    message: 'Запись в Bitrix отключена. Workflow работает в безопасном read-only режиме.',\n    http_status: 501\n  };\n}\n\nif (action === 'research_sources') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь исследовательский пакет по теме статьи.\n\nВажно: у тебя нет права объявлять источник проверенным только по названию или URL.\nРаздели источники на:\n- user_provided — источник дал редактор;\n- metadata_only — можно оценить только по переданным метаданным;\n- needs_manual_verification — требуется ручная проверка полного текста;\n- rejected — источник не подходит или недостаточно данных.\n\nНе выдумывай новые библиографические записи.\nДопускается предложить только поисковые запросы для PubMed, Google Scholar, российских клинических рекомендаций и сайтов профильных профессиональных обществ.\n\nФОРМАТ:\n{\n  \"approved_sources_text\": \"строки только по источникам, которые можно оставить редактору на утверждение\",\n  \"candidates\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"source_type\": \"\",\n      \"status\": \"user_provided|metadata_only|needs_manual_verification|rejected\",\n      \"why_relevant\": \"\",\n      \"limitations\": \"\"\n    }\n  ],\n  \"search_queries\": [\n    {\n      \"database\": \"PubMed|Google Scholar|Клинические рекомендации РФ|Профессиональное общество\",\n      \"query\": \"\",\n      \"purpose\": \"\"\n    }\n  ],\n  \"claims_needing_sources\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_outline') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nСоставь подробный план медицинской SEO-статьи строго по выбранной структуре.\nЕсли в данных передан structure_config, соблюдай порядок, обязательность, repeat, instructions, global_instructions, forbidden и seo.\nНе пиши саму статью.\n\nФОРМАТ:\n{\n  \"outline_text\": \"редактируемый текстовый план\",\n  \"outline\": [\n    {\n      \"order\": 1,\n      \"block\": \"\",\n      \"heading\": \"\",\n      \"heading_level\": \"intro|h2|h3\",\n      \"required\": true,\n      \"purpose\": \"\",\n      \"key_points\": [],\n      \"source_requirements\": [],\n      \"medical_review_points\": []\n    }\n  ],\n  \"missing_information\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_article') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь полный черновик статьи по утверждённому плану и выбранной структуре.\n\nТРЕБОВАНИЯ К HTML:\n- detail_html содержит только содержимое статьи, без html, head и body;\n- используй h2, h3, p, ul, ol, table, blockquote;\n- не используй inline-стили, script, iframe;\n- первый абзац должен сразу отвечать на основной запрос, если структура не требует иного;\n- источники в тексте должны соответствовать массиву sources;\n- дисклеймер обязателен;\n- не добавляй несуществующие формы, цены и контакты.\n\nФОРМАТ:\n{\n  \"name\": \"\",\n  \"code\": \"\",\n  \"seo_title\": \"\",\n  \"meta_description\": \"\",\n  \"preview_text\": \"\",\n  \"short_answer\": \"\",\n  \"detail_html\": \"\",\n  \"sources\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"identifier\": \"\",\n      \"used_for\": []\n    }\n  ],\n  \"related_articles\": [],\n  \"medical_review_questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\"\n    }\n  ],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'extract_med_questions') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроведи медицинскую редакторскую проверку готовой статьи.\nНе переписывай текст.\nВыдели только формулировки, которые требуют подтверждения врача:\n- конкретные схемы, сроки, дозировки, число процедур;\n- показания и противопоказания;\n- причинно-следственные медицинские утверждения;\n- прогноз и ожидаемый эффект;\n- спорные или слишком категоричные утверждения;\n- данные без источника.\n\nФОРМАТ:\n{\n  \"questions_text\": \"пронумерованный список для передачи врачу\",\n  \"questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\",\n      \"suggested_safe_wording\": \"\"\n    }\n  ],\n  \"critical_count\": 0,\n  \"warnings\": []\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'apply_med_answers') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nВнеси ответы медицинского редактора в статью точечно.\nМеняй только те фрагменты, к которым относятся ответы.\nНе улучшай стиль остального текста и не генерируй статью заново.\nЕсли ответ врача неоднозначен, не меняй фрагмент и добавь предупреждение.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changes\": [\n    {\n      \"question_id\": \"\",\n      \"before\": \"\",\n      \"after\": \"\",\n      \"status\": \"changed|deleted|unchanged\"\n    }\n  ],\n  \"unresolved_questions\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nВОПРОСЫ И ОТВЕТЫ:\n${compactJson({\n  questions: data.med_questions ?? data.questions ?? '',\n  answers: data.med_answers ?? data.answers ?? ''\n})}\n`;\n}\n\nif (action === 'validate_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроверь статью перед публикацией. Ничего не переписывай.\n\nПРОВЕРКИ:\n- наличие обязательных блоков выбранной структуры;\n- выполнение дополнительных требований;\n- нарушения forbidden и YMYL;\n- гарантии результата, заочная диагностика и назначения;\n- числа и медицинские утверждения без источника;\n- соответствие источников тексту;\n- title, description, code, preview, short_answer;\n- HTML: запрещённые теги, незакрытые конструкции, дубли H1;\n- дисклеймер;\n- логичность CTA;\n- соответствие автора и медредактора переданным данным.\n\nФОРМАТ:\n{\n  \"passed\": false,\n  \"score\": 0,\n  \"report_text\": \"\",\n  \"errors\": [\n    {\n      \"code\": \"\",\n      \"severity\": \"critical|major|minor\",\n      \"location\": \"\",\n      \"message\": \"\",\n      \"recommended_fix\": \"\"\n    }\n  ],\n  \"warnings\": [],\n  \"checks\": [\n    {\n      \"name\": \"\",\n      \"passed\": true,\n      \"details\": \"\"\n    }\n  ]\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nТЕХНИЧЕСКОЕ ЗАДАНИЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'revise_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПереработай только фрагменты, прямо указанные в замечаниях.\nНе меняй согласованные части, структуру, факты TEMED и ответы врача без необходимости.\nВерни полный объект статьи после точечной правки.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changed_sections\": [\n    {\n      \"location\": \"\",\n      \"reason\": \"\",\n      \"before\": \"\",\n      \"after\": \"\"\n    }\n  ],\n  \"unresolved_comments\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nЗАМЕЧАНИЯ:\n${compactJson(data.revision_request ?? data.comments ?? data.validation_report ?? '')}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (!direct && !prompt) {\n  return fail(\n    'ACTION_NOT_IMPLEMENTED',\n    'Для действия не сформирован обработчик.',\n    501\n  );\n}\n\nreturn [{\n  json: {\n    valid: true,\n    success: true,\n    direct,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data,\n    prompt,\n    response,\n    http_status: response?.http_status ?? 200\n  }\n}];"
+        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nconst action = String(body.action ?? '').trim();\nconst requestId = String(\n  body.request_id\n  ?? body.requestId\n  ?? `seo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nconst data = body.data ?? body.payload ?? body.brief ?? {};\n\nconst allowedActions = new Set([\n  'health',\n  'research_sources',\n  'generate_outline',\n  'generate_article',\n  'extract_med_questions',\n  'apply_med_answers',\n  'validate_article',\n  'revise_article',\n  'approve_outline',\n  'load_existing_article',\n  'load_dictionaries',\n  'assistant_chat',\n  'start_external_uniqueness',\n  'get_external_uniqueness',\n  'assistant_refresh_knowledge',\n  'create_bitrix_draft'\n]);\n\nfunction fail(errorCode, message, httpStatus = 400, details = {}) {\n  return [{\n    json: {\n      valid: false,\n      success: false,\n      action,\n      request_id: requestId,\n      error_code: errorCode,\n      message,\n      details,\n      http_status: httpStatus\n    }\n  }];\n}\n\nif (!allowedActions.has(action)) {\n  return fail(\n    'UNKNOWN_ACTION',\n    'Неизвестное действие.',\n    400,\n    { allowed_actions: [...allowedActions] }\n  );\n}\n\nconst generationId = String(\n  body.generation_id\n  ?? data.generation_id\n  ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nfunction compactJson(value) {\n  return JSON.stringify(value ?? {}, null, 2);\n}\n\nfunction articleFromPayload(payload) {\n  return payload.article\n    ?? payload.result\n    ?? payload.current_article\n    ?? {\n      name: payload.result_name ?? '',\n      code: payload.result_code ?? '',\n      seo_title: payload.result_seo_title ?? '',\n      meta_description: payload.result_meta_description ?? '',\n      preview_text: payload.result_preview ?? '',\n      short_answer: payload.result_short_answer ?? '',\n      detail_html: payload.result_detail_html ?? '',\n      sources: payload.result_sources ?? '',\n      related_articles: payload.result_related_articles ?? ''\n    };\n}\n\nconst commonRules = `\nТы — медицинский SEO-редактор сети клиник TEMED.\n\nОБЯЗАТЕЛЬНЫЕ ПРАВИЛА:\n1. Работай только с данными, переданными в JSON. Не придумывай факты о TEMED, врачах, клиниках, методах, ценах, длительности, количестве процедур и результатах.\n2. Внутренние факты TEMED и комментарии врача имеют приоритет. Их смысл нельзя менять.\n3. Не ставь заочный диагноз и не назначай лечение конкретному читателю.\n4. Не обещай результат и не используй гарантии эффективности.\n5. Числа и медицинские утверждения допускаются только при наличии указанного источника. Если источника нет, убери точное число или пометь утверждение как требующее проверки.\n6. Не выдумывай статьи, исследования, DOI, PMID, URL, клинические рекомендации или цитаты.\n7. Ответ возвращай только как один корректный JSON-объект без markdown и без пояснений вокруг JSON.\n8. Язык результата — русский.\n`;\n\nlet direct = false;\nlet response = null;\nlet prompt = '';\n\nif (action === 'health') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      status: 'ok',\n      workflow: 'TEMED SEO Editor v1',\n      ai_model: 'gpt-5.4-mini'\n    }\n  };\n}\n\nif (action === 'approve_outline') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      approved: true,\n      outline: data.generated_outline ?? data.outline ?? ''\n    }\n  };\n}\n\nif (action === 'load_existing_article' || action === 'load_dictionaries') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      handled_by: 'TEMED SEO PHP proxy',\n      message: 'Это действие выполняется напрямую через защищённый PHP proxy, без n8n.'\n    }\n  };\n}\n\n\nif (action === 'assistant_chat') {\n  direct = true;\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {answer: 'Ассистент подключён. Production workflow должен добавить модель и безопасный контекст.', mode: data.mode ?? 'article', sources: [{type: 'github', path: 'docs/assistant.md'}], suggestions: [], warnings: []}};\n}\n\n\nif (action === 'assistant_refresh_knowledge') {\n  direct = true;\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {status: 'scheduled', allowed_files: ['README.md', 'docs/**', 'internal/seo-editor/assets/js/**', 'n8n/TEMED SEO Editor.json']}};\n}\n\nif (action === 'create_bitrix_draft') {\n  direct = true;\n  response = {\n    success: false,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    error_code: 'WRITE_API_DISABLED',\n    message: 'Запись в Bitrix отключена. Workflow работает в безопасном read-only режиме.',\n    http_status: 501\n  };\n}\n\nif (action === 'research_sources') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь исследовательский пакет по теме статьи.\n\nВажно: у тебя нет права объявлять источник проверенным только по названию или URL.\nРаздели источники на:\n- user_provided — источник дал редактор;\n- metadata_only — можно оценить только по переданным метаданным;\n- needs_manual_verification — требуется ручная проверка полного текста;\n- rejected — источник не подходит или недостаточно данных.\n\nНе выдумывай новые библиографические записи.\nДопускается предложить только поисковые запросы для PubMed, Google Scholar, российских клинических рекомендаций и сайтов профильных профессиональных обществ.\n\nФОРМАТ:\n{\n  \"approved_sources_text\": \"строки только по источникам, которые можно оставить редактору на утверждение\",\n  \"candidates\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"source_type\": \"\",\n      \"status\": \"user_provided|metadata_only|needs_manual_verification|rejected\",\n      \"why_relevant\": \"\",\n      \"limitations\": \"\"\n    }\n  ],\n  \"search_queries\": [\n    {\n      \"database\": \"PubMed|Google Scholar|Клинические рекомендации РФ|Профессиональное общество\",\n      \"query\": \"\",\n      \"purpose\": \"\"\n    }\n  ],\n  \"claims_needing_sources\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_outline') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nСоставь подробный план медицинской SEO-статьи строго по выбранной структуре.\nЕсли в данных передан structure_config, соблюдай порядок, обязательность, repeat, instructions, global_instructions, forbidden и seo.\nНе пиши саму статью.\n\nФОРМАТ:\n{\n  \"outline_text\": \"редактируемый текстовый план\",\n  \"outline\": [\n    {\n      \"order\": 1,\n      \"block\": \"\",\n      \"heading\": \"\",\n      \"heading_level\": \"intro|h2|h3\",\n      \"required\": true,\n      \"purpose\": \"\",\n      \"key_points\": [],\n      \"source_requirements\": [],\n      \"medical_review_points\": []\n    }\n  ],\n  \"missing_information\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_article') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь полный черновик статьи по утверждённому плану и выбранной структуре.\n\nТРЕБОВАНИЯ К HTML:\n- detail_html содержит только содержимое статьи, без html, head и body;\n- используй h2, h3, p, ul, ol, table, blockquote;\n- не используй inline-стили, script, iframe;\n- первый абзац должен сразу отвечать на основной запрос, если структура не требует иного;\n- источники в тексте должны соответствовать массиву sources;\n- дисклеймер обязателен;\n- не добавляй несуществующие формы, цены и контакты.\n\nФОРМАТ:\n{\n  \"name\": \"\",\n  \"code\": \"\",\n  \"seo_title\": \"\",\n  \"meta_description\": \"\",\n  \"preview_text\": \"\",\n  \"short_answer\": \"\",\n  \"detail_html\": \"\",\n  \"sources\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"identifier\": \"\",\n      \"used_for\": []\n    }\n  ],\n  \"related_articles\": [],\n  \"medical_review_questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\"\n    }\n  ],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'extract_med_questions') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроведи медицинскую редакторскую проверку готовой статьи.\nНе переписывай текст.\nВыдели только формулировки, которые требуют подтверждения врача:\n- конкретные схемы, сроки, дозировки, число процедур;\n- показания и противопоказания;\n- причинно-следственные медицинские утверждения;\n- прогноз и ожидаемый эффект;\n- спорные или слишком категоричные утверждения;\n- данные без источника.\n\nФОРМАТ:\n{\n  \"questions_text\": \"пронумерованный список для передачи врачу\",\n  \"questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\",\n      \"suggested_safe_wording\": \"\"\n    }\n  ],\n  \"critical_count\": 0,\n  \"warnings\": []\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'apply_med_answers') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nВнеси ответы медицинского редактора в статью точечно.\nМеняй только те фрагменты, к которым относятся ответы.\nНе улучшай стиль остального текста и не генерируй статью заново.\nЕсли ответ врача неоднозначен, не меняй фрагмент и добавь предупреждение.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changes\": [\n    {\n      \"question_id\": \"\",\n      \"before\": \"\",\n      \"after\": \"\",\n      \"status\": \"changed|deleted|unchanged\"\n    }\n  ],\n  \"unresolved_questions\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nВОПРОСЫ И ОТВЕТЫ:\n${compactJson({\n  questions: data.med_questions ?? data.questions ?? '',\n  answers: data.med_answers ?? data.answers ?? ''\n})}\n`;\n}\n\nif (action === 'validate_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроверь статью перед публикацией. Ничего не переписывай.\n\nПРОВЕРКИ:\n- наличие обязательных блоков выбранной структуры;\n- выполнение дополнительных требований;\n- нарушения forbidden и YMYL;\n- гарантии результата, заочная диагностика и назначения;\n- числа и медицинские утверждения без источника;\n- соответствие источников тексту;\n- title, description, code, preview, short_answer;\n- HTML: запрещённые теги, незакрытые конструкции, дубли H1;\n- дисклеймер;\n- логичность CTA;\n- соответствие автора и медредактора переданным данным.\n\nФОРМАТ:\n{\n  \"passed\": false,\n  \"score\": 0,\n  \"report_text\": \"\",\n  \"errors\": [\n    {\n      \"code\": \"\",\n      \"severity\": \"critical|major|minor\",\n      \"location\": \"\",\n      \"message\": \"\",\n      \"recommended_fix\": \"\"\n    }\n  ],\n  \"warnings\": [],\n  \"checks\": [\n    {\n      \"name\": \"\",\n      \"passed\": true,\n      \"details\": \"\"\n    }\n  ]\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nТЕХНИЧЕСКОЕ ЗАДАНИЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'revise_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПереработай только фрагменты, прямо указанные в замечаниях.\nНе меняй согласованные части, структуру, факты TEMED и ответы врача без необходимости.\nВерни полный объект статьи после точечной правки.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changed_sections\": [\n    {\n      \"location\": \"\",\n      \"reason\": \"\",\n      \"before\": \"\",\n      \"after\": \"\"\n    }\n  ],\n  \"unresolved_comments\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nЗАМЕЧАНИЯ:\n${compactJson(data.revision_request ?? data.comments ?? data.validation_report ?? '')}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (!direct && !prompt) {\n  return fail(\n    'ACTION_NOT_IMPLEMENTED',\n    'Для действия не сформирован обработчик.',\n    501\n  );\n}\n\nreturn [{\n  json: {\n    valid: true,\n    success: true,\n    direct,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data,\n    prompt,\n    response,\n    http_status: response?.http_status ?? 200\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -122,7 +122,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ $json.response }}",
+        "responseBody": "={{ $json.response || $json }}",
         "options": {
           "responseCode": "={{ $json.http_status || 200 }}"
         }
@@ -261,6 +261,250 @@
       ],
       "id": "a5d435d2-07d2-4e33-b862-7be831d0a698",
       "name": "Setup notes"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_start_external_uniqueness",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "start_external_uniqueness",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        240
+      ],
+      "id": "e5f96184-3173-4f09-825d-4c2b3e2cf5cb",
+      "name": "IF start external uniqueness"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepared = $input.first().json;\nconst data = prepared.data ?? {};\nconst text = data.text;\nconst contentHash = data.content_hash;\nfunction fail(errorCode, message, httpStatus = 400) {\n  return [{json: {success: false, action: prepared.action, request_id: prepared.request_id, generation_id: prepared.generation_id, error_code: errorCode, message, http_status: httpStatus}}];\n}\nlet payloadSize = 0;\ntry { payloadSize = JSON.stringify(data).length; } catch (_) { payloadSize = 0; }\nif (payloadSize > 170000) return fail('TEXT_RU_PAYLOAD_TOO_LARGE', 'Payload для TEXT.RU превышает лимит workflow.', 413);\nif (typeof text !== 'string') return fail('TEXT_RU_TEXT_REQUIRED', 'Для проверки TEXT.RU требуется текст строкой.', 400);\nconst trimmed = text.trim();\nif (!trimmed) return fail('TEXT_RU_TEXT_REQUIRED', 'Для проверки TEXT.RU требуется непустой текст.', 400);\nif (trimmed.length < 100) return fail('TEXT_TOO_SHORT_FOR_TEXT_RU', 'Для проверки TEXT.RU требуется не менее 100 символов.', 400);\nif (trimmed.length > 150000) return fail('TEXT_TOO_LONG_FOR_TEXT_RU', 'TEXT.RU принимает не более 150000 символов.', 400);\nif (typeof contentHash !== 'string' || !contentHash.trim()) return fail('TEXT_RU_CONTENT_HASH_REQUIRED', 'Для проверки TEXT.RU требуется content_hash.', 400);\nreturn [{json: {action: prepared.action, request_id: prepared.request_id, generation_id: prepared.generation_id, content_hash: contentHash.trim(), text: trimmed, submitted_at: new Date().toISOString()}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        128
+      ],
+      "id": "4300c808-7dc1-4a83-9346-5b1ff124f73a",
+      "name": "Prepare TEXT.RU submit"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.text.ru/post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { text: $json.text, exceptdomain: 'temed.ru, *.temed.ru', copying: 'noadd' } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1136,
+        128
+      ],
+      "id": "aae5ff4a-8d8c-4446-a428-9779350dd065",
+      "name": "TEXT.RU — Submit text",
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "B5x4KM4IzNjPvjnN",
+          "name": "TEXT.RU API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function textRuError(action, requestId, generationId, raw, ctx = {}) {\n  const code = Number(raw?.error_code ?? raw?.code ?? 0);\n  const desc = String(raw?.error_desc ?? raw?.message ?? '').slice(0, 500);\n  const base = {success: false, action, request_id: requestId, generation_id: generationId, data: {status: 'failed', provider: 'text.ru', content_hash: ctx.content_hash, text_uid: ctx.text_uid}};\n  const validation = new Set([110,111,112,113,150]);\n  const credential = new Set([120,121,170,171,141,146]);\n  const provider = new Set([140,143,144,145,151,182,183]);\n  if (validation.has(code)) return {...base, error_code: code === 112 ? 'TEXT_TOO_SHORT_FOR_TEXT_RU' : code === 113 ? 'TEXT_TOO_LONG_FOR_TEXT_RU' : 'TEXT_RU_VALIDATION_ERROR', message: desc || 'TEXT.RU отклонил текст для проверки.', http_status: 400};\n  if (credential.has(code)) return {...base, error_code: 'TEXT_RU_CREDENTIAL_ERROR', message: 'Не удалось авторизоваться в TEXT.RU. Проверьте credential TEXT.RU API.', http_status: 502};\n  if (code === 142) return {...base, error_code: 'TEXT_RU_INSUFFICIENT_BALANCE', message: 'На балансе TEXT.RU недостаточно символов для проверки.', http_status: 402};\n  if (code === 160 || code === 161) return {...base, error_code: 'TEXT_RU_UID_INVALID', message: desc || 'TEXT.RU требует корректный UID проверки.', http_status: 400};\n  if (code === 180) return {...base, error_code: 'TEXT_RU_UID_NOT_FOUND', message: 'TEXT.RU не нашёл результат для указанного UID.', http_status: 404};\n  if (code === 429) return {...base, error_code: 'TEXT_RU_RATE_LIMIT', message: 'TEXT.RU временно ограничил количество запросов.', data: {...base.data, retry_after_seconds: 60}, http_status: 429};\n  if (provider.has(code)) return {...base, error_code: 'TEXT_RU_PROVIDER_ERROR', message: code === 182 ? 'Проверка завершилась ошибкой на стороне TEXT.RU.' : (desc || 'TEXT.RU временно не смог выполнить проверку.'), http_status: 502};\n  return {...base, error_code: 'TEXT_RU_PROVIDER_ERROR', message: desc || 'TEXT.RU вернул ошибку.', http_status: 502};\n}\n\nconst raw = $input.first().json;\nconst ctx = $node['Prepare TEXT.RU submit'].json;\nif (raw?.error_code !== undefined) return [{json: textRuError(ctx.action, ctx.request_id, ctx.generation_id, raw, ctx)}];\nconst textUid = typeof raw?.text_uid === 'string' ? raw.text_uid.trim() : '';\nif (!textUid) return [{json: {success: false, action: ctx.action, request_id: ctx.request_id, generation_id: ctx.generation_id, error_code: 'TEXT_RU_INVALID_RESPONSE', message: 'TEXT.RU не вернул text_uid.', data: {status: 'failed', content_hash: ctx.content_hash, provider: 'text.ru'}, http_status: 502}}];\nreturn [{json: {success: true, action: ctx.action, request_id: ctx.request_id, generation_id: ctx.generation_id, data: {status: 'processing', text_uid: textUid, content_hash: ctx.content_hash, submitted_at: ctx.submitted_at, retry_after_seconds: 15, provider: 'text.ru'}, http_status: 200}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        128
+      ],
+      "id": "65224472-17a9-4a3f-860d-a8731ff389ec",
+      "name": "Normalize TEXT.RU submit"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is_get_external_uniqueness",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "get_external_uniqueness",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        640,
+        496
+      ],
+      "id": "70157c21-e5d0-42f3-95d4-fe86ae0da199",
+      "name": "IF get external uniqueness"
+    },
+    {
+      "parameters": {
+        "jsCode": "const prepared = $input.first().json;\nconst data = prepared.data ?? {};\nconst uid = data.text_uid ?? data.uid;\nconst contentHash = data.content_hash;\nfunction fail(errorCode, message, httpStatus = 400) { return [{json: {success: false, action: prepared.action, request_id: prepared.request_id, generation_id: prepared.generation_id, error_code: errorCode, message, http_status: httpStatus}}]; }\nif (typeof uid !== 'string' || !uid.trim()) return fail('TEXT_RU_UID_REQUIRED', 'Для запроса результата TEXT.RU требуется text_uid.', 400);\nconst textUid = uid.trim();\nif (textUid.length > 200 || /[\\u0000-\\u001F\\u007F]/.test(textUid)) return fail('TEXT_RU_UID_INVALID', 'UID TEXT.RU имеет недопустимый формат.', 400);\nif (typeof contentHash !== 'string' || !contentHash.trim()) return fail('TEXT_RU_CONTENT_HASH_REQUIRED', 'Для результата TEXT.RU требуется content_hash.', 400);\nreturn [{json: {action: prepared.action, request_id: prepared.request_id, generation_id: prepared.generation_id, content_hash: contentHash.trim(), text_uid: textUid}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        896,
+        384
+      ],
+      "id": "8143ca60-7f14-4173-b42d-981883dcd7d0",
+      "name": "Prepare TEXT.RU result request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.text.ru/post",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpCustomAuth",
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={{ { uid: $json.text_uid, jsonvisible: 'detail_view' } }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1136,
+        384
+      ],
+      "id": "60e7137f-8755-4f22-8651-af56d67ce91b",
+      "name": "TEXT.RU — Get result",
+      "credentials": {
+        "httpCustomAuth": {
+          "id": "B5x4KM4IzNjPvjnN",
+          "name": "TEXT.RU API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "function textRuError(action, requestId, generationId, raw, ctx = {}) {\n  const code = Number(raw?.error_code ?? raw?.code ?? 0);\n  const desc = String(raw?.error_desc ?? raw?.message ?? '').slice(0, 500);\n  const base = {success: false, action, request_id: requestId, generation_id: generationId, data: {status: 'failed', provider: 'text.ru', content_hash: ctx.content_hash, text_uid: ctx.text_uid}};\n  const validation = new Set([110,111,112,113,150]);\n  const credential = new Set([120,121,170,171,141,146]);\n  const provider = new Set([140,143,144,145,151,182,183]);\n  if (validation.has(code)) return {...base, error_code: code === 112 ? 'TEXT_TOO_SHORT_FOR_TEXT_RU' : code === 113 ? 'TEXT_TOO_LONG_FOR_TEXT_RU' : 'TEXT_RU_VALIDATION_ERROR', message: desc || 'TEXT.RU отклонил текст для проверки.', http_status: 400};\n  if (credential.has(code)) return {...base, error_code: 'TEXT_RU_CREDENTIAL_ERROR', message: 'Не удалось авторизоваться в TEXT.RU. Проверьте credential TEXT.RU API.', http_status: 502};\n  if (code === 142) return {...base, error_code: 'TEXT_RU_INSUFFICIENT_BALANCE', message: 'На балансе TEXT.RU недостаточно символов для проверки.', http_status: 402};\n  if (code === 160 || code === 161) return {...base, error_code: 'TEXT_RU_UID_INVALID', message: desc || 'TEXT.RU требует корректный UID проверки.', http_status: 400};\n  if (code === 180) return {...base, error_code: 'TEXT_RU_UID_NOT_FOUND', message: 'TEXT.RU не нашёл результат для указанного UID.', http_status: 404};\n  if (code === 429) return {...base, error_code: 'TEXT_RU_RATE_LIMIT', message: 'TEXT.RU временно ограничил количество запросов.', data: {...base.data, retry_after_seconds: 60}, http_status: 429};\n  if (provider.has(code)) return {...base, error_code: 'TEXT_RU_PROVIDER_ERROR', message: code === 182 ? 'Проверка завершилась ошибкой на стороне TEXT.RU.' : (desc || 'TEXT.RU временно не смог выполнить проверку.'), http_status: 502};\n  return {...base, error_code: 'TEXT_RU_PROVIDER_ERROR', message: desc || 'TEXT.RU вернул ошибку.', http_status: 502};\n}\n\nconst raw = $input.first().json;\nconst ctx = $node['Prepare TEXT.RU result request'].json;\nif (Number(raw?.error_code) === 181) return [{json: {success: true, action: ctx.action, request_id: ctx.request_id, generation_id: ctx.generation_id, data: {status: 'processing', text_uid: ctx.text_uid, content_hash: ctx.content_hash, retry_after_seconds: 15, provider: 'text.ru'}, http_status: 200}}];\nif (raw?.error_code !== undefined) return [{json: textRuError(ctx.action, ctx.request_id, ctx.generation_id, raw, ctx)}];\nif (raw?.text_unique === undefined) return [{json: {success: false, action: ctx.action, request_id: ctx.request_id, generation_id: ctx.generation_id, error_code: 'TEXT_RU_INVALID_RESPONSE', message: 'TEXT.RU не вернул статус обработки или процент уникальности.', data: {status: 'failed', text_uid: ctx.text_uid, content_hash: ctx.content_hash, provider: 'text.ru'}, http_status: 502}}];\nconst warnings = [];\nfunction parseMaybeJson(value, fallback, field) {\n  if (value === undefined || value === null || value === '') return fallback;\n  if (typeof value !== 'string') return value;\n  try { return JSON.parse(value); } catch (_) { warnings.push(`TEXT_RU_${field.toUpperCase()}_PARSE_WARNING`); return fallback; }\n}\nconst uniqueness = Number(String(raw.text_unique).replace(',', '.'));\nconst result = parseMaybeJson(raw.result_json, {}, 'result_json');\nconst spellCheck = parseMaybeJson(raw.spell_check, [], 'spell_check');\nconst seoCheck = parseMaybeJson(raw.seo_check, {}, 'seo_check');\nreturn [{json: {success: true, action: ctx.action, request_id: ctx.request_id, generation_id: ctx.generation_id, data: {status: 'completed', text_uid: ctx.text_uid, content_hash: ctx.content_hash, checked_at: new Date().toISOString(), uniqueness_percent: Number.isFinite(uniqueness) ? uniqueness : 0, result: {date_check: result.date_check ?? '', unique: Number(result.unique ?? uniqueness) || uniqueness || 0, urls: Array.isArray(result.urls) ? result.urls : [], text_view: result.text_view ?? '', words_pos: Array.isArray(result.words_pos) ? result.words_pos : []}, spell_check: Array.isArray(spellCheck) ? spellCheck : [], seo_check: seoCheck && typeof seoCheck === 'object' && !Array.isArray(seoCheck) ? seoCheck : {}, provider: 'text.ru', warnings}, http_status: 200}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1376,
+        384
+      ],
+      "id": "313bfbd8-fa54-435d-bb6b-f7cc4dce460a",
+      "name": "Normalize TEXT.RU result"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={ $json.text }",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1016,
+        128
+      ],
+      "id": "486214f8-1ad1-4e79-8862-1342ca0f0044",
+      "name": "IF TEXT.RU submit prepared"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "ok",
+              "leftValue": "={ $json.text_uid }",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1016,
+        384
+      ],
+      "id": "a10f3bb6-cedf-460a-8010-0f4dc5898d80",
+      "name": "IF TEXT.RU result prepared"
     }
   ],
   "pinData": {},
@@ -291,7 +535,7 @@
       "main": [
         [
           {
-            "node": "IF direct response",
+            "node": "IF start external uniqueness",
             "type": "main",
             "index": 0
           }
@@ -357,6 +601,144 @@
         [
           {
             "node": "Respond model error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF start external uniqueness": {
+      "main": [
+        [
+          {
+            "node": "Prepare TEXT.RU submit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF get external uniqueness",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare TEXT.RU submit": {
+      "main": [
+        [
+          {
+            "node": "IF TEXT.RU submit prepared",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TEXT.RU — Submit text": {
+      "main": [
+        [
+          {
+            "node": "Normalize TEXT.RU submit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize TEXT.RU submit": {
+      "main": [
+        [
+          {
+            "node": "Respond direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF get external uniqueness": {
+      "main": [
+        [
+          {
+            "node": "Prepare TEXT.RU result request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "IF direct response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare TEXT.RU result request": {
+      "main": [
+        [
+          {
+            "node": "IF TEXT.RU result prepared",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "TEXT.RU — Get result": {
+      "main": [
+        [
+          {
+            "node": "Normalize TEXT.RU result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize TEXT.RU result": {
+      "main": [
+        [
+          {
+            "node": "Respond direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF TEXT.RU submit prepared": {
+      "main": [
+        [
+          {
+            "node": "TEXT.RU — Submit text",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond direct",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF TEXT.RU result prepared": {
+      "main": [
+        [
+          {
+            "node": "TEXT.RU — Get result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond direct",
             "type": "main",
             "index": 0
           }
