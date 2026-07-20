@@ -540,6 +540,21 @@
           <span class="hint sys hint-flush">Меняются только указанные части — статья не генерируется заново без необходимости.</span>
         </div>
       </div>
+      <div class="card uniqueness-card" id="uniqueness_card" data-testid="uniqueness-card">
+        <h3>Уникальность текста</h3>
+        <p class="hint sys">Проверяется нормализованный текст из заголовка, анонса, короткого ответа и HTML статьи. Медицинский смысл автоматически не меняется.</p>
+        <div class="btnrow mb-14">
+          <button type="button" class="btn" data-action="check_internal_uniqueness" id="run_internal_uniqueness">Проверить по материалам TEMED</button>
+          <button type="button" class="btn" data-action="start_external_uniqueness" id="run_external_uniqueness">Проверить в интернете</button>
+          <button type="button" class="btn primary" data-action="run_all_uniqueness" id="run_all_uniqueness">Запустить обе проверки</button>
+        </div>
+        <div class="uniqueness-grid">
+          <div class="uniqueness-result" id="internal_uniqueness_result" data-status="not_started"><h4>Внутренняя уникальность TEMED</h4><div class="status">Не запускалась</div><div class="matches" id="internal_uniqueness_matches"></div></div>
+          <div class="uniqueness-result" id="external_uniqueness_result" data-status="not_started"><h4>Внешняя уникальность TEXT.RU</h4><div class="status">Не запускалась</div><div class="matches" id="external_uniqueness_matches"></div></div>
+        </div>
+        <div class="outdated-warning is-hidden" id="uniqueness_outdated_warning">Текст изменён после проверки. Результат устарел.</div>
+      </div>
+
       <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: вёрстка →</button></div>
     </section>
 
@@ -581,11 +596,11 @@
       <div class="card">
         <div class="callout info"><b>Сценарий 1 (текущий).</b> Система формирует XML, вы скачиваете его и импортируете в Bitrix вручную. Права записи не выдаются.</div>
         <div class="btnrow mb-18">
-          <button type="button" class="btn primary" data-action="download_xml">Сформировать XML для импорта</button>
+          <button type="button" class="btn primary" data-action="download_bitrix_xml">Сформировать XML для импорта</button>
         </div>
         <div class="callout warn"><b>Сценарий 2 (будущий).</b> n8n через отдельный write-API создаёт только <i>неактивный</i> черновик в инфоблоке 81.</div>
         <div class="btnrow mb-18">
-          <button type="button" class="btn" data-action="create_bitrix_draft">Создать неактивный черновик в Bitrix</button>
+          <button type="button" class="btn" data-action="create_bitrix_draft" disabled aria-disabled="true">Создать неактивный черновик в Bitrix</button>
         </div>
         <div class="field">
           <label for="save_result">Результат сохранения</label>
@@ -622,6 +637,19 @@
     </form>
   </div>
 </div>
+  <aside class="assistant-panel" id="assistant_panel" data-testid="assistant-panel" aria-label="ИИ-ассистент">
+    <button type="button" class="assistant-toggle" id="assistant_toggle">ИИ-ассистент</button>
+    <div class="assistant-body">
+      <div class="assistant-head"><h2>ИИ-ассистент</h2><button type="button" class="btn" id="assistant_clear">Очистить</button></div>
+      <div class="seg assistant-mode" id="assistant_mode"><button type="button" data-mode="article" class="on">Помощь со статьёй</button><button type="button" data-mode="system">Помощь по системе</button></div>
+      <div class="assistant-context" id="assistant_context_indicator">Контекст: текущий шаг и безопасные поля</div>
+      <div class="assistant-messages" id="assistant_messages" aria-live="polite"></div>
+      <div class="assistant-sources" id="assistant_sources"></div>
+      <div class="assistant-suggestions" id="assistant_suggestions"></div>
+      <div class="assistant-compose"><textarea id="assistant_input" rows="3" placeholder="Задайте вопрос"></textarea><button type="button" class="btn primary" id="assistant_send">Отправить</button></div>
+    </div>
+  </aside>
+
 <script src="assets/js/editor.js?v=1.0.0"></script>
 
 </body>

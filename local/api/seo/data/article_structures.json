@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"id":"medical_article","name":"Медицинская статья","version":"1.0.0","intents":["informational","commercial_informational"],"required":true}
+  ],
+  "count": 1
+}

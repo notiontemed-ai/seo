@@ -1,0 +1,18 @@
+{
+  "name": "Тестовая статья TEMED",
+  "code": "testovaya-statya-temed",
+  "preview_text": "Короткий анонс & проверка UTF-8.",
+  "detail_html": "<p>HTML статьи с безопасной CDATA последовательностью ]]&gt;.</p>",
+  "seo_title": "SEO title",
+  "meta_description": "Meta description",
+  "section": "100",
+  "article_structure": "medical_article",
+  "article_structure_name": "Медицинская статья",
+  "article_structure_version": "1.0.0",
+  "search_intent": "informational",
+  "article_type": "article",
+  "author_id": "10",
+  "medical_reviewer_id": "11",
+  "region": "msk",
+  "related_articles": ["1", "2"]
+}

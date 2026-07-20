@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<temed_bitrix_articles>
+  <iblock_id>81</iblock_id>
+  <element>
+    <fields>
+      <active><![CDATA[N]]></active>
+      <name><![CDATA[Тестовая статья TEMED]]></name>
+      <code><![CDATA[testovaya-statya-temed]]></code>
+      <iblock_section_id><![CDATA[100]]></iblock_section_id>
+      <preview_text><![CDATA[Короткий анонс & проверка UTF-8.]]></preview_text>
+      <detail_text_type><![CDATA[html]]></detail_text_type>
+      <detail_text><![CDATA[<p>HTML статьи с безопасной CDATA последовательностью ]]&gt;.</p>]]></detail_text>
+      <seo_title><![CDATA[SEO title]]></seo_title>
+      <meta_description><![CDATA[Meta description]]></meta_description>
+    </fields>
+  </element>
+</temed_bitrix_articles>
