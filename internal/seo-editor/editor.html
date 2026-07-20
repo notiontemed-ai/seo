@@ -604,6 +604,7 @@
         </div>
         <div class="btnrow">
           <button type="button" class="btn" data-action="validate_layout_result">Проверить результат</button>
+          <button type="button" class="btn" id="preview_layout_result_button" data-action="preview_layout_result" disabled aria-disabled="true">Предпросмотр вёрстки</button>
           <button type="button" class="btn primary" data-action="apply_layout_result">Применить результат вёрстки</button>
           <button type="button" class="btn ghost" data-action="clear_layout_result">Очистить результат</button>
           <button type="button" class="btn ghost" data-action="restore_pre_layout_article">Откатить применённую вёрстку</button>
@@ -676,7 +677,29 @@
     </div>
   </aside>
 
-<script src="assets/js/editor.js?v=__EDITOR_JS_VERSION__"></script>
+  <div id="layout_preview_modal" class="layout-preview-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="layout_preview_title">
+    <div class="layout-preview-shell">
+      <div class="layout-preview-head">
+        <div>
+          <h2 id="layout_preview_title">Предпросмотр вёрстки</h2>
+          <div id="layout_preview_meta" class="hint"></div>
+        </div>
+        <div class="btnrow">
+          <button type="button" class="btn" id="layout_preview_desktop">Компьютер</button>
+          <button type="button" class="btn" id="layout_preview_tablet">Планшет</button>
+          <button type="button" class="btn" id="layout_preview_mobile">Телефон</button>
+          <button type="button" class="btn primary" id="layout_preview_apply">Применить этот результат</button>
+          <button type="button" class="btn ghost" id="layout_preview_close">Закрыть</button>
+        </div>
+      </div>
+      <div class="layout-preview-stage">
+        <iframe id="layout_preview_frame" title="Предпросмотр статьи" sandbox=""></iframe>
+      </div>
+    </div>
+  </div>
+
+
+<script src="assets/js/editor.js?v=1.0.1"></script>
 
 </body>
 </html>
