@@ -1,0 +1,5 @@
+<?php
+return [
+    'bearer_token' => 'CHANGE_ME',
+    'cache_ttl' => 3600,
+];

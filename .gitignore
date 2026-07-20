@@ -1,0 +1,9 @@
+config.php
+.env
+.env.*
+!.env.example
+*.log
+runtime/
+cache/
+tests/output/
+.DS_Store

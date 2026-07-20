@@ -241,6 +241,22 @@ if (!function_exists('curl_init')) {
 
 
 if ($requestMethod === 'POST') {
+    $rawBodyForRoute = file_get_contents('php://input');
+    $routePayload = json_decode((string)$rawBodyForRoute, true);
+    if (is_array($routePayload) && ($routePayload['action'] ?? '') === 'check_internal_uniqueness') {
+        $article = is_array($routePayload['article'] ?? null) ? $routePayload['article'] : [];
+        $encodedApiPayload = json_encode(['action' => 'internal_uniqueness', 'article' => $article], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $curl = curl_init($apiUrl);
+        curl_setopt_array($curl, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $encodedApiPayload, CURLOPT_RETURNTRANSFER => true, CURLOPT_FOLLOWLOCATION => false, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 120, CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $apiToken, 'Content-Type: application/json', 'Accept: application/json']]);
+        $body = curl_exec($curl);
+        $code = (int)curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+        $err = curl_error($curl);
+        curl_close($curl);
+        if ($body === false) proxySendJson(['success'=>false,'error'=>'Не удалось выполнить внутреннюю проверку','details'=>$err], 502);
+        $decoded = json_decode((string)$body, true);
+        if (!is_array($decoded)) proxySendJson(['success'=>false,'error'=>'TEMED SEO API вернул некорректный JSON'], 502);
+        proxySendJson($decoded, $code > 0 ? $code : 200);
+    }
     if ($n8nUrl === '' || $n8nSecret === '') {
         proxySendJson(
             [
@@ -288,7 +304,10 @@ if ($requestMethod === 'POST') {
         'validate_article',
         'revise_article',
         'approve_outline',
-        'download_xml',
+        'assistant_chat',
+        'start_external_uniqueness',
+        'get_external_uniqueness',
+        'assistant_refresh_knowledge',
         'create_bitrix_draft',
     ];
 
@@ -309,6 +328,24 @@ if ($requestMethod === 'POST') {
             ],
             400
         );
+    }
+
+    if ($n8nAction === 'check_internal_uniqueness') {
+        // Reserved for explicit server-side TEMED SEO API route.
+    }
+
+    $sizeLimits = [
+        'assistant_chat' => ['message' => 10000, 'generated_outline' => 100000],
+        'start_external_uniqueness' => ['text' => 150000],
+    ];
+    foreach (($sizeLimits[$n8nAction] ?? []) as $field => $limit) {
+        $value = $requestPayload[$field] ?? ($requestPayload['data'][$field] ?? '');
+        if (is_string($value) && mb_strlen($value, 'UTF-8') > $limit) {
+            proxySendJson(['success' => false, 'error' => 'Payload too large', 'field' => $field], 413);
+        }
+    }
+    if (isset($requestPayload['conversation']) && is_array($requestPayload['conversation']) && count($requestPayload['conversation']) > 20) {
+        proxySendJson(['success' => false, 'error' => 'Слишком длинная история ассистента'], 422);
     }
 
     unset($requestPayload['secret']);
@@ -354,7 +391,11 @@ if ($requestMethod === 'POST') {
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_CONNECTTIMEOUT => 15,
-            CURLOPT_TIMEOUT => 300,
+            CURLOPT_TIMEOUT => [
+                'assistant_chat' => 180,
+                'start_external_uniqueness' => 30,
+                'get_external_uniqueness' => 30,
+            ][$n8nAction] ?? 120,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
                 'Accept: application/json',
@@ -439,6 +480,7 @@ $allowedActions = [
     'services',
     'service',
     'dictionaries',
+    'system_manifest',
 ];
 
 $allowedParameters = [

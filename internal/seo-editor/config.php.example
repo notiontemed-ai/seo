@@ -1,0 +1,8 @@
+<?php
+return [
+    'password_hash' => 'CHANGE_ME',
+    'temed_seo_api_url' => 'https://example.ru/local/api/seo/index.php',
+    'temed_seo_api_token' => 'CHANGE_ME',
+    'n8n_base_url' => 'https://n8n.example.ru/webhook/example',
+    'n8n_secret' => 'CHANGE_ME',
+];
