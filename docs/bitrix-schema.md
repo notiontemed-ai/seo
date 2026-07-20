@@ -1,36 +1,27 @@
-# Схема Bitrix инфоблока 81
+# TEMED SEO Editor
 
-> Важно: этот файл должен быть сверян с фактическим экспортом тестового инфоблока 81 перед production-импортом.
+Документ обновлён под API 1.2.0. Production baseline хранится в `references/local-api-seo-index.php` и не разворачивается как endpoint. Рабочий read-only endpoint — `local/api/seo/index.php`, построенный поверх baseline и расширенный actions `system_manifest` и `internal_uniqueness`.
 
-## Базовые поля элемента
+## Архитектура и границы
 
-| Поле | Тип | Обязательное | Формат |
-|---|---:|---:|---|
-| IBLOCK_ID | integer | да | `81` |
-| ACTIVE | enum | да | `N` для ручного импорта черновика |
-| NAME | string | да | Заголовок статьи |
-| CODE | string | да | Символьный код |
-| PREVIEW_TEXT | text | да | Текст анонса |
-| DETAIL_TEXT | html | да | HTML статьи |
-| DETAIL_TEXT_TYPE | enum | да | `html` |
-| SECTION_ID | integer | да | ID раздела |
-| SEO_TITLE | string | нет | SEO title |
-| META_DESCRIPTION | string | нет | meta description |
+Browser editor обращается к `internal/seo-editor/proxy.php`. Proxy передаёт GET read-only actions в TEMED SEO API, отправляет `check_internal_uniqueness` напрямую в API POST `internal_uniqueness`, а AI/TEXT.RU actions — в n8n. XML экспорт остаётся в PHP (`internal/seo-editor/export.php`) и не создаёт элемент в Bitrix напрямую.
 
-## Свойства
+## Bitrix schema
 
-| Код | Тип | Обязательное | Множественное | Формат значения |
-|---|---|---:|---:|---|
-| ARTICLE_STRUCTURE | string | да | нет | XML_ID структуры |
-| ARTICLE_STRUCTURE_NAME | string | нет | нет | Название структуры |
-| ARTICLE_STRUCTURE_VERSION | string | да | нет | Версия структуры |
-| SEARCH_INTENT | list | да | нет | XML_ID значения |
-| ARTICLE_TYPE | list | да | нет | XML_ID или code из справочника |
-| AUTHOR | element | да | нет | ID врача |
-| MEDICAL_REVIEWER | element | да | нет | ID врача |
-| REGION | list | нет | нет | XML_ID региона |
-| RELATED_ARTICLES | element | нет | да | ID элементов |
+Используются инфоблоки из `config.php`: articles 81, legacy_articles 68, doctors 65, prices 70, clinics 10. Статьи читаются из 81 и 68; для 81 дополнительно учитывается свойство `SHORT_ANSWER`. Свойства врачей фильтруются allowlist baseline, чувствительные свойства исключаются.
 
-## Пример
+## Security
 
-См. `tests/fixtures/bitrix-iblock-81-reference.xml` и `tests/fixtures/bitrix-article-payload.json`.
+API требует `Authorization: Bearer <read_token>`. Отсутствующий, пустой или `CHANGE_ME` token переводит API в fail-closed `API_NOT_CONFIGURED` 503. Секреты, `config.php`, webhook URL, credential IDs и пути сервера не раскрываются в manifest. `bearer_token` поддержан временно с server-side warning и deprecated.
+
+## Internal uniqueness
+
+Алгоритм `internal-shingles-v1`: общая HTML/text нормализация, shingle coverage по последовательностям слов, сравнение с corpus инфоблоков 81 и 68, исключение только по паре `source + element_id`. Результат не меняет медицинский текст и помечает совпавшие фрагменты как требующие ручной проверки.
+
+## Assistant
+
+`assistant_chat` идёт через proxy в n8n model branch. Proxy добавляет live `system_manifest`, `article_structures` и безопасный summary dictionaries. Suggestions требуют подтверждения пользователя и запрещены для секретов, endpoint, credential, config и hidden security fields.
+
+## Deployment
+
+Выкладка только вручную после backup production файлов и smoke tests. Не копировать `references/**`, docs, tests и `config.php.example` поверх production `config.php`. Rollback: вернуть backup API/proxy/assets, не менять config, сбросить opcode cache и проверить bootstrap.
