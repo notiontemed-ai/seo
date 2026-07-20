@@ -2,11 +2,3 @@ Options -Indexes
 <Files "config.php">
   Require all denied
 </Files>
-
-<IfModule mod_headers.c>
-    <FilesMatch "\.(css|js)$">
-        Header set Cache-Control "no-store, no-cache, must-revalidate, max-age=0"
-        Header set Pragma "no-cache"
-        Header set Expires "0"
-    </FilesMatch>
-</IfModule>
