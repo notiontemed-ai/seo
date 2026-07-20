@@ -453,7 +453,7 @@
           "conditions": [
             {
               "id": "ok",
-              "leftValue": "={ $json.text }",
+              "leftValue": "={{ $json.text }}",
               "rightValue": "",
               "operator": {
                 "type": "string",
@@ -485,7 +485,7 @@
           "conditions": [
             {
               "id": "ok",
-              "leftValue": "={ $json.text_uid }",
+              "leftValue": "={{ $json.text_uid }}",
               "rightValue": "",
               "operator": {
                 "type": "string",
