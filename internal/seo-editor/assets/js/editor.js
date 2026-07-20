@@ -1254,7 +1254,11 @@ document.querySelectorAll('[data-action]').forEach(button=>{
       if(action==='search_context'){searchRelatedArticles();return;}
       if(action==='build_external_task'){buildExternalTask();return;}
       if(action==='load_external_text'){loadExternalText();return;}
-      if(action==='build_layout_task'){buildLayoutTask();return;}
+      if(action==='build_layout_task'){await buildLayoutTask();return;}
+      if(action==='validate_layout_result'){validateExternalLayoutResult();return;}
+      if(action==='apply_layout_result'){await applyExternalLayoutResult();return;}
+      if(action==='clear_layout_result'){clearExternalLayoutResult();return;}
+      if(action==='restore_pre_layout_article'){restorePreLayoutArticle();return;}
       if(action==='load_dictionaries'){await refreshDictionaries(button);return;}
       if(action==='load_existing_article'){await loadExistingArticle(button);return;}
       if(action==='research_sources'){await runResearchSources(button);return;}
@@ -1454,58 +1458,86 @@ renderTemplates();
 selectTemplate('default');
 
 /* ---- задание на вёрстку ---- */
-function buildLayoutTask(){
+async function buildLayoutTask(){
   const d=formToObject();
   if(!d.layout_template){alert('Выберите шаблон страницы.');return;}
-  const html=d.result_detail_html||'';
+  const article=currentArticleObject();
+  const html=article.detail_html||'';
+  const taskId='layout-'+new Date().toISOString().replace(/[^0-9]/g,'').slice(0,14)+'-'+Math.random().toString(36).slice(2,8);
+  const sourceHash=await browserHash(JSON.stringify({
+    name:article.name,
+    preview_text:article.preview_text,
+    short_answer:article.short_answer,
+    detail_html:article.detail_html,
+    sources:article.sources,
+    related_articles:article.related_articles,
+    template:d.layout_template
+  }));
   const task={
     task_type:'layout',
+    schema_version:'1.0',
+    task_id:taskId,
+    source_hash:sourceHash,
     template:d.layout_template,
-    article:{
-      name:d.result_name||'',
-      code:d.result_code||'',
-      seo_title:d.result_seo_title||'',
-      meta_description:d.result_meta_description||'',
-      preview:d.result_preview||'',
-      short_answer:d.result_short_answer||''
+    instructions:{
+      mode:'layout_only',
+      preserve_medical_meaning:true,
+      return_json_only:true,
+      return_html_fragment_only:true,
+      rules:[
+        'Это вёрстка, а не повторное написание статьи.',
+        'Нельзя менять медицинский смысл.',
+        'Нельзя менять показания, противопоказания, риски, прогноз, сроки, цифры, диагнозы, рекомендации и выводы врача.',
+        'Нельзя добавлять новые медицинские утверждения.',
+        'Допустимо перестраивать HTML, добавлять контейнеры, оглавление и якоря, оформлять таблицы и FAQ, подключать разрешённые блоки и расставлять переданные внутренние ссылки.',
+        'Вернуть HTML-фрагмент для DETAIL_TEXT Bitrix без <!doctype>, <html>, <head>, <body>.',
+        'Не добавлять <script>, <iframe>, <object>, <embed>, произвольный JavaScript и внешние стили.',
+        'Использовать только переданные available_forms и available_html_blocks.',
+        'Не добавлять пояснения до или после JSON.'
+      ]
     },
-    content:{
+    article:{...article,preview_text:article.preview_text,sources:article.sources||[],related_articles:article.related_articles||[]},
+    diagnostics:{
       html_chars:html.length,
-      h2_count:(html.match(/<h2/gi)||[]).length,
-      has_tables:/<table/i.test(html),
-      sources_lines:(d.result_sources||'').split('\n').filter(Boolean).length,
-      related_lines:(d.result_related_articles||'').split('\n').filter(Boolean).length
+      h2_count:(html.match(/<h2\b/gi)||[]).length,
+      has_tables:/<table\b/i.test(html),
+      sources_count:Array.isArray(article.sources)?article.sources.length:String(d.result_sources||'').split('\n').filter(Boolean).length,
+      related_articles_count:Array.isArray(article.related_articles)?article.related_articles.length:String(d.result_related_articles||'').split('\n').filter(Boolean).length
     },
     author:doctorContext(d.author_id),
     medical_reviewer:doctorContext(d.medical_reviewer_id),
-    section:{
-      id:d.article_section_id||'',
-      name:d.article_section||'',
-      code:d.article_section_code||''
-    },
+    section:{id:d.article_section_id||'',name:d.article_section||'',code:d.article_section_code||''},
     clinic:genericContext(APP_DATA.clinics,d.clinic_id),
     service:genericContext(APP_DATA.services,d.service_id),
-    available_html_blocks:Array.isArray(APP_DATA.dictionaries.html_blocks)
-      ? APP_DATA.dictionaries.html_blocks
-      : [],
-    available_forms:Array.isArray(APP_DATA.dictionaries.forms)
-      ? APP_DATA.dictionaries.forms
-      : [],
+    available_html_blocks:Array.isArray(APP_DATA.dictionaries.html_blocks)?APP_DATA.dictionaries.html_blocks:[],
+    available_forms:Array.isArray(APP_DATA.dictionaries.forms)?APP_DATA.dictionaries.forms:[],
     notes:d.layout_notes||'',
-    checklist:[
-      'Собрать страницу по шаблону '+d.layout_template,
-      'Проставить блок автора и проверяющего врача',
-      'Оглавление по h2/h3',
-      'Блок «Краткий ответ» — сразу после первого экрана',
-      'FAQ с разметкой FAQPage (если есть)',
-      'Источники — нумерованным списком в конце',
-      'Перелинковка: связанные статьи из задания',
-      'Дисклеймер в подвале статьи'
-    ]
+    checklist:['Проверить, что медицинский смысл исходной статьи сохранён.','Оглавление по h2/h3.','FAQ с разметкой FAQPage, если есть FAQ.','Источники — нумерованным списком в конце.','Дисклеймер в подвале статьи.'],
+    output_contract:{schema_version:'1.0',required:['article.detail_html'],optional:['article.name','article.code','article.seo_title','article.meta_description','article.preview_text','article.short_answer','article.sources','article.related_articles','used_blocks','warnings']}
   };
+  APP_STATE.layout.task_id=taskId;
+  APP_STATE.layout.source_hash=sourceHash;
+  APP_STATE.layout.generated_at=new Date().toISOString();
+  APP_STATE.layout.parsed_result=null;
   document.getElementById('layout_task').value=JSON.stringify(task,null,2);
-  logAction('Сформировано задание на вёрстку',{template:d.layout_template});
+  const status=document.getElementById('layout_result_status');
+  if(status)status.textContent='Задание сформировано. Source hash: '+sourceHash+'. Вставьте ответ внешнего ИИ в поле результата.';
+  logAction('Сформировано задание на вёрстку',{task_id:taskId,source_hash:sourceHash,template:d.layout_template,chars:html.length});
 }
+
+function stripHtmlToText(html){const doc=new DOMParser().parseFromString(String(html||''),'text/html');doc.querySelectorAll('script,style,iframe,object,embed').forEach(el=>el.remove());return (doc.body?.textContent||'').replace(/\s+/g,' ').trim();}
+function extractNumbers(text){return (String(text||'').match(/\d+(?:[,.]\d+)?\s*(?:%|мм|см|мг|г|кг|мл|л|дн(?:я|ей)?|нед(?:ели|ель)?|мес(?:яцев|\.)?|лет|час(?:а|ов)?|мин(?:ут)?\b)?/gi)||[]).map(x=>x.replace(/\s+/g,' ').replace(',', '.').trim().toLowerCase()).sort();}
+function normalizeLayoutRaw(raw){let text=String(raw||'').trim();const m=text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);if(m)text=m[1].trim();return text;}
+function inspectLayoutHtml(html){const errors=[],warnings=[];let clean=String(html||'').trim();if(!clean)errors.push('Пустой detail_html.');if(/<\s*(script|iframe|object|embed)\b/i.test(clean))errors.push('HTML содержит запрещённые теги script/iframe/object/embed.');if(/\son[a-z]+\s*=/i.test(clean))errors.push('HTML содержит inline-обработчики событий.');if(/javascript\s*:/i.test(clean))errors.push('HTML содержит javascript: ссылку.');if(/<\s*(html|head|body)\b/i.test(clean)){warnings.push('Получен полный HTML-документ; будет использовано содержимое body.');const doc=new DOMParser().parseFromString(clean,'text/html');clean=doc.body?.innerHTML?.trim()||clean;}const text=stripHtmlToText(clean);if(text.length<20)errors.push('HTML не содержит содержательного текста.');if(text.length>3000&&!/<h2\b/i.test(clean))warnings.push('В длинной статье нет заголовков h2.');const original=currentArticleObject();const oldText=stripHtmlToText(original.detail_html);if(oldText.length){if(text.length<oldText.length*0.9)warnings.push('Новая версия короче исходной более чем на 10%.');if(text.length>oldText.length*1.25)warnings.push('Новая версия длиннее исходной более чем на 25%.');const oldNums=extractNumbers(oldText).join('|');const newNums=extractNumbers(text).join('|');if(oldNums!==newNums)warnings.push('Обнаружено изменение числовых значений или единиц измерения.');}const hadSources=Array.isArray(original.sources)?original.sources.length:String(fieldValue('result_sources')).trim().length;if(hadSources&&!/источник|source|literature|pubmed|doi|https?:\/\//i.test(clean))warnings.push('В исходной статье были источники, но в HTML они не обнаружены.');return {html:clean,errors,warnings,text_chars:text.length};}
+function parseExternalLayoutResult(rawText){const rawHashSource=String(rawText||'');let text=normalizeLayoutRaw(rawHashSource);const warnings=[],errors=[];let data=null,fallback_html=false;if(!text){return {valid:false,article:{},warnings,errors:['Поле результата пустое.'],task_id:'',source_hash:'',fallback_html:false,raw_text:rawHashSource};}try{data=JSON.parse(text);}catch(e){if(/^\s*</.test(text)){fallback_html=true;warnings.push('Результат распознан как чистый HTML, а не JSON. Применение потребует подтверждения.');data={article:{detail_html:text}};}else{return {valid:false,article:{},warnings,errors:['Некорректный JSON: '+e.message],task_id:'',source_hash:'',fallback_html:false,raw_text:rawHashSource};}}
+  const src=data.article&&typeof data.article==='object'?data.article:data;const article={};['name','code','seo_title','meta_description','preview_text','short_answer','sources','related_articles'].forEach(k=>{if(src[k]!==undefined)article[k]=src[k];});article.detail_html=String(src.detail_html||data.detail_html||data.html||'').trim();if(!article.detail_html)errors.push('В ответе нет обязательного article.detail_html.');const htmlCheck=inspectLayoutHtml(article.detail_html);article.detail_html=htmlCheck.html;warnings.push(...(Array.isArray(data.warnings)?data.warnings:[]),...htmlCheck.warnings);errors.push(...htmlCheck.errors);return {valid:errors.length===0,article,warnings,errors,task_id:data.task_id||'',source_hash:data.source_hash||'',used_blocks:data.used_blocks||[],fallback_html,raw_text:rawHashSource,html_chars:article.detail_html.length};}
+function setLayoutStatus(lines){const el=document.getElementById('layout_result_status');if(el)el.textContent=Array.isArray(lines)?lines.join('\n'):String(lines||'');}
+async function validateExternalLayoutResult(){const raw=fieldValue('external_layout_result');const parsed=parseExternalLayoutResult(raw);parsed.input_hash=await browserHash(raw);APP_STATE.layout.parsed_result=parsed;const lines=parsed.valid?['Результат распознан.','HTML: '+String(parsed.html_chars||0).replace(/\B(?=(\d{3})+(?!\d))/g,' ')+' символов.','Предупреждений: '+parsed.warnings.length+'.','Можно применить после проверки.']:['Результат не прошёл проверку.'];parsed.warnings.forEach(w=>lines.push('Предупреждение: '+w));parsed.errors.forEach(e=>lines.push('Ошибка: '+e));if(parsed.source_hash&&APP_STATE.layout.source_hash&&parsed.source_hash!==APP_STATE.layout.source_hash)lines.push('Предупреждение: source_hash не совпадает с последним заданием.');if(!parsed.source_hash)lines.push('Предупреждение: source_hash отсутствует, результат нельзя однозначно связать с последним заданием.');setLayoutStatus(lines);logAction('Результат вёрстки проверен',{task_id:parsed.task_id,source_hash:parsed.source_hash,chars:parsed.html_chars||0,warnings:parsed.warnings.length,valid:parsed.valid});return parsed;}
+function nonEmpty(v){return Array.isArray(v)?v.length>0:String(v??'').trim().length>0;}
+async function applyExternalLayoutResult(){let parsed=APP_STATE.layout.parsed_result;if(!parsed){parsed=await validateExternalLayoutResult();}const raw=fieldValue('external_layout_result');const inputHash=await browserHash(raw);if(!parsed.input_hash||parsed.input_hash!==inputHash){alert('Поле результата изменилось после проверки. Проверьте результат повторно.');return;}if(!parsed.valid){alert('Нельзя применить результат: есть ошибки проверки.');return;}const resultHash=await browserHash(JSON.stringify(parsed.article));if(APP_STATE.layout.applied_result_hash===resultHash&&!confirm('Этот результат вёрстки уже применён. Применить повторно?'))return;if(parsed.source_hash&&APP_STATE.layout.source_hash&&parsed.source_hash!==APP_STATE.layout.source_hash&&!confirm('source_hash результата не совпадает с последним заданием. Всё равно применить?'))return;if(!parsed.source_hash&&!confirm('source_hash отсутствует, результат нельзя однозначно связать с последним заданием. Всё равно применить?'))return;if(parsed.fallback_html&&!confirm('Результат распознан как чистый HTML, а не JSON. Всё равно применить?'))return;const oldHtml=fieldValue('result_detail_html');if(!confirm('Применить результат вёрстки?\n\nСтарый HTML: '+oldHtml.length+' символов.\nНовый HTML: '+parsed.article.detail_html.length+' символов.'))return;APP_STATE.layout.previous_article={result_name:fieldValue('result_name'),result_code:fieldValue('result_code'),result_seo_title:fieldValue('result_seo_title'),result_meta_description:fieldValue('result_meta_description'),result_preview:fieldValue('result_preview'),result_short_answer:fieldValue('result_short_answer'),result_detail_html:oldHtml,result_sources:fieldValue('result_sources'),result_related_articles:fieldValue('result_related_articles')};setFieldValue('result_detail_html',parsed.article.detail_html);const map={name:'result_name',code:'result_code',seo_title:'result_seo_title',meta_description:'result_meta_description',preview_text:'result_preview',short_answer:'result_short_answer',sources:'result_sources',related_articles:'result_related_articles'};Object.entries(map).forEach(([k,id])=>{if(nonEmpty(parsed.article[k]))setFieldValue(id,Array.isArray(parsed.article[k])?valueToText(parsed.article[k]):parsed.article[k]);});APP_STATE.layout.applied_result_hash=resultHash;await markUniquenessOutdated();setLayoutStatus(['Результат вёрстки применён.','Теперь XML будет сформирован из обновлённой версии статьи.']);logAction('Результат вёрстки применён',{task_id:parsed.task_id,source_hash:parsed.source_hash,chars:parsed.article.detail_html.length,warnings:parsed.warnings.length});}
+function clearExternalLayoutResult(){setFieldValue('external_layout_result','');APP_STATE.layout.parsed_result=null;setLayoutStatus('Результат вёрстки ещё не загружен.');}
+function restorePreLayoutArticle(){const prev=APP_STATE.layout.previous_article;if(!prev){alert('Нет сохранённой версии для отката в текущей сессии.');return;}Object.entries(prev).forEach(([id,value])=>setFieldValue(id,value));markUniquenessOutdated();setLayoutStatus('Предыдущая версия статьи восстановлена. XML снова будет сформирован из восстановленной итоговой версии.');logAction('Выполнен откат применённой вёрстки',{task_id:APP_STATE.layout.task_id,source_hash:APP_STATE.layout.source_hash});}
+
 
 /* ---- копирование ---- */
 document.querySelectorAll('[data-copy]').forEach(btn=>{
@@ -1527,7 +1559,8 @@ function fallbackCopy(text,done){
 
 
 /* ===================== Assistant, uniqueness and XML export ===================== */
-const APP_STATE=window.APP_STATE||{assistant:{mode:'article',sessionId:'',messages:[]},uniqueness:{internal:null,external:null}};
+const APP_STATE=window.APP_STATE||{assistant:{mode:'article',sessionId:'',messages:[]},uniqueness:{internal:null,external:null},layout:{task_id:'',source_hash:'',generated_at:'',parsed_result:null,previous_article:null,applied_result_hash:''}};
+APP_STATE.layout=APP_STATE.layout||{task_id:'',source_hash:'',generated_at:'',parsed_result:null,previous_article:null,applied_result_hash:''};
 window.APP_STATE=APP_STATE;
 const ASSISTANT_ALLOWED_FIELDS=new Set(['topic','primary_query','secondary_queries','search_intent','article_structure','article_type','region','reader_goal','result_name','result_preview','result_short_answer','result_detail_html','revision_request']);
 function fieldValue(id){const el=document.getElementById(id);return el?el.value:'';}
