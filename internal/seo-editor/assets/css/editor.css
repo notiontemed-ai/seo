@@ -287,6 +287,8 @@ textarea.log{background:#17231a;color:#a9bf9a;border:none;font-family:'IBM Plex 
 .mb-18{margin-bottom:18px}
 .btnrow-compact{margin:4px 0 16px}
 .hint-flush{margin:0}
+.editor-toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);background:var(--teal-deep);color:#f4f7ee;padding:11px 18px;border-radius:999px;font-size:13px;font-weight:500;box-shadow:var(--shadow);z-index:1400;opacity:0;pointer-events:none;transition:opacity .22s ease,transform .22s ease;max-width:90vw}
+.editor-toast.is-visible{opacity:1;transform:translateX(-50%) translateY(0)}
 .label-note{font-weight:400;color:var(--muted)}
 .struct-detail-title{font-size:13px}
 .struct-detail-meta{font-size:11px;color:var(--muted)}

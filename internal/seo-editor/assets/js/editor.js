@@ -1449,6 +1449,51 @@ function applyCaseProcessing(data){
   appendCaseTranscript(cleaned||raw);
   setCaseSummary(data&&typeof data.summary==='string'?data.summary:'');
   setCaseTopics(Array.isArray(data&&data.topics)?data.topics:[]);
+  handleCaseTranscriptForMaterial();
+}
+
+const CASE_MATERIAL_PREFIX='Кейс из голосового сообщения врача:';
+
+/* Собрать блок для «Материала врача» из текущей расшифровки кейса. */
+function buildCaseMaterialBlock(){
+  const transcript=fieldValue('case_transcript').trim();
+  return transcript?CASE_MATERIAL_PREFIX+'\n'+transcript:'';
+}
+
+/* Перенести расшифровку кейса в expert_material: пусто → вставить, непусто → дописать через пустую строку. */
+function insertCaseIntoExpertMaterial(){
+  const block=buildCaseMaterialBlock();
+  const el=document.getElementById('expert_material');
+  if(!block||!el)return false;
+  const existing=el.value.trim();
+  setFieldValue('expert_material',existing?existing+'\n\n'+block:block);
+  return true;
+}
+
+/* Кнопка «Добавить расшифровку кейса» видна, пока есть что переносить. */
+function refreshCaseMaterialButton(){
+  const row=document.getElementById('expert_material_case_row');
+  if(!row)return;
+  row.classList.toggle('is-hidden',!fieldValue('case_transcript').trim());
+}
+
+/* После обработки кейса: пустой материал заполняем автоматически, непустой не трогаем — предлагаем кнопку. */
+function handleCaseTranscriptForMaterial(){
+  const el=document.getElementById('expert_material');
+  if(el&&!el.value.trim()&&fieldValue('case_transcript').trim()){
+    if(insertCaseIntoExpertMaterial())showEditorToast('Расшифровка добавлена в материалы врача');
+  }
+  refreshCaseMaterialButton();
+}
+
+let editorToastTimer=null;
+function showEditorToast(message){
+  const el=document.getElementById('editorToast');
+  if(!el)return;
+  el.textContent=String(message||'');
+  el.classList.add('is-visible');
+  if(editorToastTimer)clearTimeout(editorToastTimer);
+  editorToastTimer=setTimeout(()=>el.classList.remove('is-visible'),4000);
 }
 
 function applyCaseTopicField(id,value){
@@ -1479,6 +1524,12 @@ document.getElementById('case_show_raw')?.addEventListener('click',()=>{
 });
 
 document.getElementById('case_topics_json')?.addEventListener('input',()=>renderCaseTopics(getCaseTopics()));
+
+document.getElementById('expert_material_add_case')?.addEventListener('click',()=>{
+  if(insertCaseIntoExpertMaterial())showEditorToast('Расшифровка добавлена в материалы врача');
+});
+
+document.getElementById('case_transcript')?.addEventListener('input',refreshCaseMaterialButton);
 
 document.addEventListener('click',event=>{
   const button=event.target.closest('[data-case-topic]');
@@ -1535,6 +1586,7 @@ document.querySelectorAll('[data-action]').forEach(button=>{
 });
 
 logAction('Интерфейс инициализирован');
+refreshCaseMaterialButton();
 Promise.all([
   loadArticleStructures(),
   loadBootstrapData()
@@ -2140,6 +2192,7 @@ function applyDraftSnapshot(snapshot){
   const step=migrateSnapshotStep(snapshot);
   if(typeof showStep==='function') showStep(step);
   if(typeof window.refreshCardIndicators==='function') window.refreshCardIndicators();
+  if(typeof refreshCaseMaterialButton==='function') refreshCaseMaterialButton();
   APP_STATE.draft.is_dirty=false;renderDraftState();
 }
 async function callDraftApi(action,data={},button=null){return callN8n(action,data,button);}
