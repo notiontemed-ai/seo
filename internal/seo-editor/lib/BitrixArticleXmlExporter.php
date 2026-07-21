@@ -18,30 +18,77 @@ final class BitrixArticleXmlExporter
     private array $warnings = [];
     private int $filledProperties = 0;
 
+    /** Пути поиска шаблона: сначала внутри деплоймента, затем прежние tests/fixtures (совместимость/тесты). @return list<string> */
+    public function templatePaths(): array
+    {
+        return [
+            __DIR__ . '/fixtures/bitrix-iblock-81-reference.xml',
+            dirname(__DIR__, 3) . '/tests/fixtures/bitrix-iblock-81-reference.xml',
+            dirname(__DIR__, 3) . '/../tests/fixtures/bitrix-iblock-81-reference.xml',
+        ];
+    }
+
+    private function locateTemplate(): string
+    {
+        foreach ($this->templatePaths() as $path) {
+            if (is_file($path)) return $path;
+        }
+        throw new RuntimeException('Шаблон bitrix-iblock-81-reference.xml не найден ни по одному из путей: ' . implode(', ', $this->templatePaths()));
+    }
+
     public function export(array $payload): DOMDocument
     {
         $this->warnings = [];
         $this->filledProperties = 0;
-        $template = dirname(__DIR__, 3) . '/tests/fixtures/bitrix-iblock-81-reference.xml';
-        if (!is_file($template)) $template = dirname(__DIR__, 3) . '/../tests/fixtures/bitrix-iblock-81-reference.xml';
+        $template = $this->locateTemplate();
         $doc = new DOMDocument('1.0', 'UTF-8');
         $doc->formatOutput = true;
         $doc->preserveWhiteSpace = false;
-        if (is_file($template)) $doc->load($template);
-        else {
-            $root = $doc->appendChild($doc->createElement('КоммерческаяИнформация'));
-            $root->setAttribute('ВерсияСхемы', '2.021');
-            $root->appendChild($doc->createElement('Каталог'))->appendChild($doc->createElement('Товары'));
-        }
+        $doc->load($template);
         $doc->documentElement?->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
+        $normalized = $this->normalizePayload($payload);
+        $this->validateSection($doc, $normalized['section']);
         $goods = $doc->getElementsByTagName('Товары')->item(0);
         if (!$goods) {
             $catalog = $doc->getElementsByTagName('Каталог')->item(0) ?: $doc->documentElement?->appendChild($doc->createElement('Каталог'));
             $goods = $catalog->appendChild($doc->createElement('Товары'));
         }
         while ($goods->firstChild) $goods->removeChild($goods->firstChild);
-        $goods->appendChild($this->createProduct($doc, $this->normalizePayload($payload)));
+        $goods->appendChild($this->createProduct($doc, $normalized));
         return $doc;
+    }
+
+    /**
+     * Самопроверка собранного документа: обязательные узлы Классификатора/Каталога на месте и группа товара непуста.
+     * @return list<string> перечень отсутствующих/пустых узлов (пустой список — документ валиден)
+     */
+    public function validate(DOMDocument $doc): array
+    {
+        $xp = new DOMXPath($doc);
+        $missing = [];
+        if ($xp->query('//Классификатор')->length === 0) $missing[] = 'Классификатор';
+        if ($xp->query('//Каталог/Ид')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/Ид)')) === '') $missing[] = 'Каталог/Ид';
+        if ($xp->query('//Каталог/ИдКлассификатора')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/ИдКлассификатора)')) === '') $missing[] = 'Каталог/ИдКлассификатора';
+        if ($xp->query('//Классификатор/Свойства/Свойство')->length === 0) $missing[] = 'Классификатор/Свойства/Свойство';
+        $group = trim((string)$xp->evaluate('string(//Товар/Группы/Ид)'));
+        if ($xp->query('//Товар/Группы/Ид')->length === 0 || $group === '') $missing[] = 'Товар/Группы/Ид';
+        return $missing;
+    }
+
+    /** Проверить, что раздел товара присутствует в группах Классификатора шаблона; иначе — предупреждение. */
+    private function validateSection(DOMDocument $doc, string $section): void
+    {
+        $section = trim($section);
+        if ($section === '') return;
+        $xp = new DOMXPath($doc);
+        $groups = [];
+        foreach ($xp->query('//Классификатор/Группы//Группа/Ид') as $node) {
+            $id = trim($node->textContent);
+            if ($id !== '') $groups[$id] = true;
+        }
+        if ($groups && !isset($groups[$section])) {
+            $this->warnings[] = 'Раздел ' . $section . ' отсутствует в Классификаторе шаблона; убедитесь, что в инфоблоке 81 существует раздел с этим XML_ID.';
+        }
     }
 
     public function filename(array $payload): string
