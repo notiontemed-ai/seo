@@ -758,11 +758,8 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {}
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($node['Build draft plan'].json.requests[0].body) }}",
         "options": {
           "response": {
             "response": {
@@ -825,11 +822,8 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {}
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($node['Build draft plan'].json.requests[1].body) }}",
         "options": {
           "response": {
             "response": {
@@ -892,11 +886,8 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {}
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($node['Build draft plan'].json.requests[2].body) }}",
         "options": {
           "response": {
             "response": {
@@ -913,73 +904,6 @@
       ],
       "id": "15e7c7b6-b8bc-4f29-9a2a-6a2888042b91",
       "name": "Draft Sheets request 3",
-      "credentials": {
-        "googleSheetsOAuth2Api": {
-          "id": "j68oP4jTpcKIyBYP",
-          "name": "Google Sheets [ n8n.temed ]"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict"
-          },
-          "conditions": [
-            {
-              "id": "draft_request_4",
-              "leftValue": "={{ $node['Build draft plan'].json.requests[3] !== undefined }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.2,
-      "position": [
-        -240,
-        688
-      ],
-      "id": "3d144239-b50c-43b1-878a-7d1b705812d2",
-      "name": "IF draft request 4"
-    },
-    {
-      "parameters": {
-        "method": "={{ $node['Build draft plan'].json.requests[3].method }}",
-        "url": "={{ $node['Build draft plan'].json.requests[3].url }}",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "googleSheetsOAuth2Api",
-        "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            {}
-          ]
-        },
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "json"
-            }
-          }
-        }
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        -16,
-        616
-      ],
-      "id": "dcb26f59-9d42-4e8c-8544-5ba8db2d3d7b",
-      "name": "Draft Sheets request 4",
       "credentials": {
         "googleSheetsOAuth2Api": {
           "id": "j68oP4jTpcKIyBYP",
@@ -1566,35 +1490,6 @@
         ],
         [
           {
-            "node": "IF draft request 4",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Draft Sheets request 3": {
-      "main": [
-        [
-          {
-            "node": "IF draft request 4",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF draft request 4": {
-      "main": [
-        [
-          {
-            "node": "Draft Sheets request 4",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
             "node": "Respond draft mutation",
             "type": "main",
             "index": 0
@@ -1602,7 +1497,7 @@
         ]
       ]
     },
-    "Draft Sheets request 4": {
+    "Draft Sheets request 3": {
       "main": [
         [
           {
