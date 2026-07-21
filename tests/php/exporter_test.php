@@ -32,6 +32,11 @@ $exporter = new BitrixArticleXmlExporter();
 $doc = $exporter->export($payload);
 $xml = (string)$doc->saveXML();
 $xp = new DOMXPath($doc);
+assertTrue($xp->query('//Классификатор')->length === 1, 'Классификатор missing from document');
+assertTrue($xp->query('//Классификатор/Свойства/Свойство')->length >= 1, 'Классификатор must keep at least one Свойство');
+assertTrue(trim((string)$xp->evaluate('string(//Каталог/Ид)')) === '81', 'Каталог/Ид must be 81');
+assertTrue(trim((string)$xp->evaluate('string(//Каталог/ИдКлассификатора)')) !== '', 'Каталог/ИдКлассификатора must be present');
+assertTrue($exporter->validate($doc) === [], 'validate() must report no missing nodes: ' . implode(',', $exporter->validate($doc)));
 foreach (['847','848','849','850','851','852','853','854','855','856','857','858','864','865','866','867','868','869','870','871'] as $id) {
     assertTrue(str_contains($xml, '<Ид>' . $id . '</Ид>'), 'property ' . $id . ' missing');
 }
@@ -55,5 +60,33 @@ $doc2 = (new BitrixArticleXmlExporter())->export($empty);
 $xp2 = new DOMXPath($doc2);
 foreach (['852','855','856','869','870','871'] as $id) assertTrue(propValues($xp2,$id) === [], 'optional property ' . $id . ' must be absent');
 assertTrue(propValues($xp2,'864') === ['default'], 'template fallback failed');
+
+// section присутствует в группах шаблона (100) — предупреждений о разделе нет
+assertTrue(implode('|', $exporter->warnings()) === '' || !str_contains(implode('|', $exporter->warnings()), 'отсутствует в Классификаторе'), 'unexpected section warning for known section');
+
+// section отсутствует в группах шаблона — должно быть предупреждение, но экспорт не блокируется
+$foreign = $payload;
+$foreign['section'] = '432';
+$foreignExporter = new BitrixArticleXmlExporter();
+$foreignDoc = $foreignExporter->export($foreign);
+assertTrue(str_contains(implode('|', $foreignExporter->warnings()), 'Раздел 432 отсутствует в Классификаторе шаблона'), 'missing section must produce warning');
+assertTrue($foreignExporter->validate($foreignDoc) === [], 'foreign-section document must still be valid');
+assertTrue(trim((string)(new DOMXPath($foreignDoc))->evaluate('string(//Товар/Группы/Ид)')) === '432', 'Группы/Ид must carry section value');
+
+// отсутствие шаблона по всем путям — исключение (не тихий каркас)
+$paths = (new BitrixArticleXmlExporter())->templatePaths();
+$canonical = $paths[0];
+$backup = $canonical . '.bak';
+assertTrue(is_file($canonical), 'canonical template must exist for this test');
+rename($canonical, $backup);
+$threw = false;
+try {
+    (new BitrixArticleXmlExporter())->export($payload);
+} catch (RuntimeException $e) {
+    $threw = true;
+} finally {
+    rename($backup, $canonical);
+}
+assertTrue($threw, 'missing template must throw RuntimeException instead of building empty skeleton');
 
 echo "exporter ok\n";

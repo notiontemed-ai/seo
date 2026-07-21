@@ -35,7 +35,13 @@ foreach ($required as $field) {
 if ($missing) jsonError(422, 'Не удалось сформировать XML: заполните обязательные поля.', ['missing_fields'=>$missing]);
 
 $exporter = new BitrixArticleXmlExporter();
-$doc = $exporter->export($payload);
+try {
+    $doc = $exporter->export($payload);
+} catch (RuntimeException $e) {
+    jsonError(500, 'Шаблон bitrix-iblock-81-reference.xml не найден на сервере', ['paths'=>$exporter->templatePaths()]);
+}
+$problems = $exporter->validate($doc);
+if ($problems) jsonError(500, 'Сформированный XML неполный: отсутствуют обязательные узлы.', ['missing'=>$problems]);
 $filename = $exporter->filename($payload);
 header('X-TEMED-XML-Filled-Properties: ' . (string)$exporter->filledProperties());
 header('X-TEMED-XML-Warnings: ' . rawurlencode(json_encode($exporter->warnings(), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)));
