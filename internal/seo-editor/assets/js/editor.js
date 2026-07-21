@@ -1140,6 +1140,9 @@ async function runExtractMedQuestions(button){
 
   const data=await callN8n('extract_med_questions',actionPayload(),button);
   document.getElementById('med_questions').value=questionsToText(data);
+  const items=(Array.isArray(data.warnings)?data.warnings:[]).map(w=>({raw:w,severity:'warning'}));
+  const count=Array.isArray(data.questions)?data.questions.length:(data.questions_text?undefined:0);
+  renderResultReport('med_report_cards',buildResultReport(count!==undefined?('Готово: подготовлено вопросов для врача — '+count+'.'):'Готово: вопросы для врача подготовлены.',items));
   document.getElementById('side_status').textContent='вопросы подготовлены';
 }
 
@@ -1153,6 +1156,8 @@ async function runApplyMedAnswers(button){
 
   const data=await callN8n('apply_med_answers',actionPayload(),button);
   setArticleResult(data.article||data);
+  const items=(Array.isArray(data.warnings)?data.warnings:[]).map(w=>({raw:w,severity:'warning'}));
+  renderResultReport('med_report_cards',buildResultReport('Готово: ответы врача внесены в текст.',items));
   document.getElementById('side_status').textContent='ответы врача применены';
   goto(9);
 }
@@ -1170,6 +1175,15 @@ async function runValidateArticle(button){
     data.report_text
       ? data.report_text+'\n\n'+JSON.stringify(data,null,2)
       : JSON.stringify(data,null,2);
+
+  const items=[];
+  (Array.isArray(data.errors)?data.errors:[]).forEach(err=>{
+    const sev=err&&err.severity==='critical'?'critical':(err&&err.severity==='minor'?'info':'warning');
+    items.push({raw:err,severity:sev,code:err&&err.code});
+  });
+  (Array.isArray(data.warnings)?data.warnings:[]).forEach(w=>items.push({raw:w,severity:'warning'}));
+  const headline=data.passed?'Готово: статья прошла проверку.':'Проверка выявила замечания.';
+  renderResultReport('validation_report_cards',buildResultReport(headline,items));
 
   document.getElementById('side_status').textContent=
     data.passed?'проверка пройдена':'есть замечания';
@@ -1757,11 +1771,173 @@ async function buildLayoutTask(){
 
 function stripHtmlToText(html){const doc=new DOMParser().parseFromString(String(html||''),'text/html');doc.querySelectorAll('script,style,iframe,object,embed').forEach(el=>el.remove());return (doc.body?.textContent||'').replace(/\s+/g,' ').trim();}
 function extractNumbers(text){return (String(text||'').match(/\d+(?:[,.]\d+)?\s*(?:%|мм|см|мг|г|кг|мл|л|дн(?:я|ей)?|нед(?:ели|ель)?|мес(?:яцев|\.)?|лет|час(?:а|ов)?|мин(?:ут)?\b)?/gi)||[]).map(x=>x.replace(/\s+/g,' ').replace(',', '.').trim().toLowerCase()).sort();}
+/* ===================== человекочитаемые отчёты проверок =====================
+   Сырой технический текст предупреждений/ошибок остаётся целиком в журнале
+   (logAction). Пользователю показываем резюме + карточки по severity через
+   WARNING_CATALOG. Сопоставление — по коду, затем по регулярке текста, затем
+   общий фолбэк. */
+const WARNING_CATALOG=[
+  /* --- critical: искажение медицинских данных --- */
+  {pattern:/изменени[ея].*числ|числ.*(значени|измени)|единиц.*измерени|дозировк/i,severity:'critical',
+    title:'Числа или дозировки в тексте изменились при обработке',
+    consequence:'Риск искажения медицинских данных — доз, сроков, количества процедур.',
+    action:'Обязательно сверьте все числа и дозировки с исходным текстом до применения.'},
+  /* --- critical: небезопасный / пустой HTML --- */
+  {pattern:/запрещённые теги|script\/iframe|inline-обработчик|javascript:\s*ссылк|javascript\s*:/i,severity:'critical',
+    title:'В вёрстке есть небезопасный код',
+    consequence:'Такой HTML небезопасен и не будет принят при импорте.',
+    action:'Запросите у исполнителя чистую вёрстку без скриптов, обработчиков и встраиваемых блоков.'},
+  {pattern:/пустой detail_html|нет обязательного article\.detail_html|не содержит содержательного текста|поле результата пустое/i,severity:'critical',
+    title:'Результат вёрстки пуст или без текста',
+    consequence:'Применять нечего — итоговая статья потеряет содержимое.',
+    action:'Проверьте, что исполнитель прислал полный HTML статьи, и вставьте его заново.'},
+  {pattern:/некорректный json/i,severity:'critical',
+    title:'Ответ не удалось разобрать',
+    consequence:'Формат ответа нарушен — применить результат нельзя.',
+    action:'Попросите исполнителя прислать корректный JSON-ответ и вставьте его заново.'},
+  /* --- warning: источники --- */
+  {code:'SOURCES_MISSING',pattern:/источник.*не обнаруж|в исходной статье были источники|sources отсутств/i,severity:'warning',
+    title:'В статье нет списка источников',
+    consequence:'Статья уйдёт без блока «Источники» — для медицинского контента это снижает доверие и E-E-A-T.',
+    action:'Вернитесь к шагу генерации и верните источники, либо подтвердите публикацию без них.'},
+  /* --- warning: формы записи --- */
+  {code:'AVAILABLE_FORMS_EMPTY',pattern:/available_forms\s*(пуст|отсутств|нет|empty)|формы записи не/i,severity:'warning',
+    title:'Формы записи не подключены',
+    consequence:'На странице не будет кнопок записи на приём — страница не приведёт заявки.',
+    action:'Выберите формы на шаге вёрстки или подтвердите, что страница информационная.'},
+  /* --- info: FAQ микроданными --- */
+  {code:'FAQ_MICRODATA_FALLBACK',pattern:/faqpage.*(микроданн|microdata)|микроданн.*faq|faq.*вместо json-?ld/i,severity:'info',
+    title:'FAQ размечен допустимым запасным способом',
+    consequence:'На SEO не влияет.',
+    action:'Действий не требуется.'},
+  /* --- info: полный HTML-документ --- */
+  {pattern:/полный html-документ/i,severity:'info',
+    title:'Прислан полный HTML-документ',
+    consequence:'Будет использовано только содержимое body — на статью это не влияет.',
+    action:'Действий не требуется.'},
+  /* --- warning: структура/объём текста --- */
+  {pattern:/нет заголовков h2/i,severity:'warning',
+    title:'В длинной статье нет подзаголовков (h2)',
+    consequence:'Такой текст труднее читать, и он хуже ранжируется.',
+    action:'Попросите исполнителя разбить статью на разделы с заголовками h2.'},
+  {pattern:/короче исходной/i,severity:'warning',
+    title:'Новая версия заметно короче оригинала',
+    consequence:'Возможно, часть текста потерялась при вёрстке.',
+    action:'Сравните объём с исходной статьёй перед применением.'},
+  {pattern:/длиннее исходной/i,severity:'warning',
+    title:'Новая версия заметно длиннее оригинала',
+    consequence:'В текст мог попасть лишний или придуманный контент.',
+    action:'Проверьте, что добавленного текста нет или он корректен.'},
+  {pattern:/распознан как чистый html/i,severity:'warning',
+    title:'Ответ пришёл как HTML, а не в ожидаемом формате',
+    consequence:'Служебные поля (заголовок, код, источники) из ответа не обновятся.',
+    action:'Лучше запросить ответ в формате JSON; применение потребует подтверждения.'},
+  /* --- warning: привязка результата к заданию (source_hash) --- */
+  {pattern:/исходная статья изменилась после формирования задания/i,severity:'warning',
+    title:'Исходная статья изменилась после запуска задания',
+    consequence:'Вёрстка сделана по устаревшей версии текста.',
+    action:'Сформируйте задание на вёрстку заново на текущей версии статьи.'},
+  {pattern:/source_hash не совпадает|source_hash без последнего задания/i,severity:'warning',
+    title:'Результат не привязан к последнему заданию',
+    consequence:'Возможно, показан результат от предыдущей версии текста.',
+    action:'Перегенерируйте вёрстку, если меняли текст после запуска задания.'},
+  {pattern:/source_hash отсутств/i,severity:'warning',
+    title:'Результат не привязан к последнему заданию',
+    consequence:'Нельзя однозначно определить, к какой версии текста относится результат.',
+    action:'Перегенерируйте, если меняли текст после запуска.'},
+  /* --- info: частичный разбор отчёта уникальности TEXT.RU --- */
+  {codePattern:/^TEXT_RU_.*PARSE_WARNING$/i,severity:'info',
+    title:'Часть отчёта проверки уникальности не разобрана',
+    consequence:'Некоторые детали (орфография, SEO-метрики) могут не отображаться; процент уникальности при этом корректен.',
+    action:'Если нужны детали — повторите проверку позже.'}
+];
+const WARNING_FALLBACK={severity:'warning',
+  title:'Техническое предупреждение (подробности в журнале)',
+  action:'Откройте журнал (панель технического лога), если нужно разобраться в деталях.'};
+
+function pluralRu(n,forms){const d=n%10,h=n%100;if(d===1&&h!==11)return forms[0];if(d>=2&&d<=4&&(h<10||h>=20))return forms[1];return forms[2];}
+function messageText(raw){if(raw==null)return '';if(typeof raw==='object')return String(raw.message||raw.text||raw.detail||JSON.stringify(raw));return String(raw);}
+function classifyReportMessage(raw,opts){
+  const text=messageText(raw).trim();
+  const code=String((opts&&opts.code)||(raw&&typeof raw==='object'&&raw.code)||'').trim();
+  for(const entry of WARNING_CATALOG){
+    if(entry.code&&code&&entry.code.toLowerCase()===code.toLowerCase())return {severity:entry.severity,title:entry.title,consequence:entry.consequence,action:entry.action,raw:text};
+    if(entry.codePattern&&code&&entry.codePattern.test(code))return {severity:entry.severity,title:entry.title,consequence:entry.consequence,action:entry.action,raw:text};
+    if(entry.pattern&&text&&entry.pattern.test(text))return {severity:entry.severity,title:entry.title,consequence:entry.consequence,action:entry.action,raw:text};
+  }
+  const snippet=text.slice(0,80)+(text.length>80?'…':'');
+  return {severity:(opts&&opts.severity)||WARNING_FALLBACK.severity,title:WARNING_FALLBACK.title,consequence:snippet,action:WARNING_FALLBACK.action,raw:text};
+}
+function reportSummaryLine(headline,counts){
+  const parts=[];
+  if(counts.critical)parts.push(counts.critical+' '+pluralRu(counts.critical,['важное замечание','важных замечания','важных замечаний']));
+  if(counts.warning)parts.push(counts.warning+' '+pluralRu(counts.warning,['предупреждение','предупреждения','предупреждений']));
+  if(counts.info)parts.push(counts.info+' '+pluralRu(counts.info,['справочное','справочных','справочных']));
+  const tail=parts.length?parts.join(', ')+'.':'Замечаний нет.';
+  return String(headline||'').replace(/\s*$/,'')+' '+tail;
+}
+function buildResultReport(headline,items){
+  const cards=(Array.isArray(items)?items:[]).map(it=>{
+    if(it&&typeof it==='object'&&!Array.isArray(it)&&('raw'in it||'severity'in it||'code'in it))
+      return classifyReportMessage(it.raw!==undefined?it.raw:it,{severity:it.severity,code:it.code});
+    return classifyReportMessage(it);
+  }).filter(Boolean);
+  const order={critical:0,warning:1,info:2};
+  cards.sort((a,b)=>(order[a.severity]??9)-(order[b.severity]??9));
+  const counts={critical:0,warning:0,info:0};
+  cards.forEach(c=>{counts[c.severity]=(counts[c.severity]||0)+1;});
+  return {headline,cards,counts,summary:reportSummaryLine(headline,counts)};
+}
+function unlockCriticalGate(target){const b=typeof target==='string'?document.querySelector(target):target;if(b&&b.dataset&&b.dataset.criticalLocked){delete b.dataset.criticalLocked;b.disabled=false;b.removeAttribute('aria-disabled');}}
+function clearResultReport(container){const el=typeof container==='string'?document.getElementById(container):container;if(el){el.classList.remove('result-report');el.textContent='';}}
+function renderResultReport(container,report,options){
+  const el=typeof container==='string'?document.getElementById(container):container;
+  if(!el)return report;
+  el.classList.add('result-report');
+  el.textContent='';
+  const summary=document.createElement('div');
+  summary.className='rr-summary';
+  summary.textContent=report.summary;
+  el.appendChild(summary);
+  if(report.cards.length){
+    const wrap=document.createElement('div');
+    wrap.className='rr-cards';
+    report.cards.forEach(card=>{
+      const box=document.createElement('div');
+      box.className='rr-card rr-'+card.severity;
+      const title=document.createElement('div');title.className='rr-card-title';title.textContent=card.title;box.appendChild(title);
+      if(card.consequence){const c=document.createElement('div');c.className='rr-card-consequence';c.textContent=card.consequence;box.appendChild(c);}
+      if(card.action){const a=document.createElement('div');a.className='rr-card-action';a.textContent=card.action;box.appendChild(a);}
+      wrap.appendChild(box);
+    });
+    el.appendChild(wrap);
+  }
+  const gateBtn=options&&options.gateButton?(typeof options.gateButton==='string'?document.querySelector(options.gateButton):options.gateButton):null;
+  if(gateBtn){
+    if(report.counts.critical>0){
+      gateBtn.disabled=true;gateBtn.dataset.criticalLocked='1';gateBtn.setAttribute('aria-disabled','true');
+      const label=document.createElement('label');
+      label.className='rr-confirm';
+      const cb=document.createElement('input');cb.type='checkbox';
+      const span=document.createElement('span');span.textContent='Я сверил и подтверждаю';
+      cb.addEventListener('change',()=>{
+        if(cb.checked){gateBtn.disabled=false;gateBtn.removeAttribute('aria-disabled');delete gateBtn.dataset.criticalLocked;}
+        else{gateBtn.disabled=true;gateBtn.setAttribute('aria-disabled','true');gateBtn.dataset.criticalLocked='1';}
+      });
+      label.append(cb,span);
+      el.appendChild(label);
+    }else{
+      unlockCriticalGate(gateBtn);
+    }
+  }
+  return report;
+}
+
 function normalizeLayoutRaw(raw){let text=String(raw||'').trim();const m=text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);if(m)text=m[1].trim();return text;}
 function inspectLayoutHtml(html){const errors=[],warnings=[];let clean=String(html||'').trim();if(!clean)errors.push('Пустой detail_html.');if(/<\s*(script|iframe|object|embed)\b/i.test(clean))errors.push('HTML содержит запрещённые теги script/iframe/object/embed.');if(/\son[a-z]+\s*=/i.test(clean))errors.push('HTML содержит inline-обработчики событий.');if(/javascript\s*:/i.test(clean))errors.push('HTML содержит javascript: ссылку.');if(/<\s*(html|head|body)\b/i.test(clean)){warnings.push('Получен полный HTML-документ; будет использовано содержимое body.');const doc=new DOMParser().parseFromString(clean,'text/html');clean=doc.body?.innerHTML?.trim()||clean;}const text=stripHtmlToText(clean);if(text.length<20)errors.push('HTML не содержит содержательного текста.');if(text.length>3000&&!/<h2\b/i.test(clean))warnings.push('В длинной статье нет заголовков h2.');const original=currentArticleObject();const oldText=stripHtmlToText(original.detail_html);if(oldText.length){if(text.length<oldText.length*0.9)warnings.push('Новая версия короче исходной более чем на 10%.');if(text.length>oldText.length*1.25)warnings.push('Новая версия длиннее исходной более чем на 25%.');const oldNums=extractNumbers(oldText).join('|');const newNums=extractNumbers(text).join('|');if(oldNums!==newNums)warnings.push('Обнаружено изменение числовых значений или единиц измерения.');}const hadSources=Array.isArray(original.sources)?original.sources.length:String(fieldValue('result_sources')).trim().length;if(hadSources&&!/источник|source|literature|pubmed|doi|https?:\/\//i.test(clean))warnings.push('В исходной статье были источники, но в HTML они не обнаружены.');return {html:clean,errors,warnings,text_chars:text.length};}
 function parseExternalLayoutResult(rawText){const rawHashSource=String(rawText||'');let text=normalizeLayoutRaw(rawHashSource);const warnings=[],errors=[];let data=null,fallback_html=false;if(!text){return {valid:false,article:{},warnings,errors:['Поле результата пустое.'],task_id:'',source_hash:'',fallback_html:false,raw_text:rawHashSource};}try{data=JSON.parse(text);}catch(e){if(/^\s*</.test(text)){fallback_html=true;warnings.push('Результат распознан как чистый HTML, а не JSON. Применение потребует подтверждения.');data={article:{detail_html:text}};}else{return {valid:false,article:{},warnings,errors:['Некорректный JSON: '+e.message],task_id:'',source_hash:'',fallback_html:false,raw_text:rawHashSource};}}
   const src=data.article&&typeof data.article==='object'?data.article:data;const article={};['name','code','seo_title','meta_description','preview_text','short_answer','sources','related_articles'].forEach(k=>{if(src[k]!==undefined)article[k]=src[k];});article.detail_html=String(src.detail_html||data.detail_html||data.html||'').trim();if(!article.detail_html)errors.push('В ответе нет обязательного article.detail_html.');const htmlCheck=inspectLayoutHtml(article.detail_html);article.detail_html=htmlCheck.html;warnings.push(...(Array.isArray(data.warnings)?data.warnings:[]),...htmlCheck.warnings);errors.push(...htmlCheck.errors);return {valid:errors.length===0,article,warnings,errors,task_id:data.task_id||'',source_hash:data.source_hash||'',used_blocks:data.used_blocks||[],fallback_html,raw_text:rawHashSource,html_chars:article.detail_html.length};}
-function setLayoutStatus(lines){const el=document.getElementById('layout_result_status');if(el)el.textContent=Array.isArray(lines)?lines.join('\n'):String(lines||'');}
+function setLayoutStatus(lines){const el=document.getElementById('layout_result_status');if(el){el.classList.remove('result-report');el.textContent=Array.isArray(lines)?lines.join('\n'):String(lines||'');}unlockCriticalGate('[data-action="apply_layout_result"]');}
 function setLayoutPreviewButtonEnabled(enabled){const btn=document.getElementById('preview_layout_result_button');if(btn){btn.disabled=!enabled;btn.setAttribute('aria-disabled',enabled?'false':'true');}}
 
 function layoutResultChangedAfterValidation(parsed){return !parsed||!parsed.input_hash||parsed.input_hash!==APP_STATE.layout.last_input_hash;}
@@ -1794,7 +1970,32 @@ function buildLayoutPreviewDocument(parsedResult){
 function setLayoutPreviewWidth(width){const frame=document.getElementById('layout_preview_frame');if(frame){frame.style.width=width+'px';frame.dataset.width=String(width);}}
 function closeLayoutPreview(){const modal=document.getElementById('layout_preview_modal');const frame=document.getElementById('layout_preview_frame');if(frame)frame.srcdoc='';modal?.classList.add('is-hidden');APP_STATE.layout.preview_opener?.focus?.();APP_STATE.layout.preview_opener=null;}
 async function previewExternalLayoutResult(opener){const parsed=APP_STATE.layout.parsed_result;if(!parsed||!parsed.valid){alert('Сначала успешно проверьте результат вёрстки.');return;}const rawHash=await browserHash(fieldValue('external_layout_result'));if(!parsed.input_hash||parsed.input_hash!==rawHash){alert('Результат изменён после проверки. Сначала повторно нажмите «Проверить результат».');return;}if((parsed.errors||[]).length){alert('Предпросмотр заблокирован: есть ошибки проверки.');return;}const safety=inspectLayoutHtml(parsed.article.detail_html);if(safety.errors.length){alert('Предпросмотр заблокирован:\n'+safety.errors.join('\n'));return;}const modal=document.getElementById('layout_preview_modal');const frame=document.getElementById('layout_preview_frame');const meta=document.getElementById('layout_preview_meta');if(!modal||!frame)return;const hashStatus=parsed.source_hash&&APP_STATE.layout.source_hash?(parsed.source_hash===APP_STATE.layout.source_hash?'source_hash совпадает':'source_hash не совпадает'):(parsed.source_hash?'source_hash без последнего задания':'source_hash отсутствует');const applied=APP_STATE.layout.applied_result_hash?'есть применённый результат':'результат ещё не применён';if(meta)meta.textContent='Шаблон: '+(fieldValue('layout_template')||'default')+' · '+String(parsed.html_chars||0).replace(/\B(?=(\d{3})+(?!\d))/g,' ')+' символов · '+(parsed.warnings||[]).length+' предупреждения · '+hashStatus+' · '+applied;frame.srcdoc=buildLayoutPreviewDocument(parsed);setLayoutPreviewWidth(1200);APP_STATE.layout.preview_opener=opener||document.activeElement;modal.classList.remove('is-hidden');document.getElementById('layout_preview_close')?.focus();logAction('Открыт предпросмотр вёрстки',{task_id:parsed.task_id,source_hash:parsed.source_hash,template:fieldValue('layout_template')||'default',chars:parsed.html_chars||0,warnings:(parsed.warnings||[]).length});}
-async function validateExternalLayoutResult(){const raw=fieldValue('external_layout_result');const parsed=parseExternalLayoutResult(raw);parsed.input_hash=await browserHash(raw);parsed.current_source_hash=await calculateLayoutSourceHash();APP_STATE.layout.last_input_hash=parsed.input_hash;APP_STATE.layout.parsed_result=parsed;const lines=parsed.valid?['Результат распознан.','HTML: '+String(parsed.html_chars||0).replace(/\B(?=(\d{3})+(?!\d))/g,' ')+' символов.','Предупреждений: '+parsed.warnings.length+'.','Можно применить после проверки.']:['Результат не прошёл проверку.'];parsed.warnings.forEach(w=>lines.push('Предупреждение: '+w));parsed.errors.forEach(e=>lines.push('Ошибка: '+e));if(parsed.source_hash&&APP_STATE.layout.source_hash&&parsed.source_hash!==APP_STATE.layout.source_hash)lines.push('Предупреждение: source_hash не совпадает с последним заданием.');if(parsed.source_hash&&parsed.current_source_hash&&parsed.source_hash!==parsed.current_source_hash)lines.push('Предупреждение: исходная статья изменилась после формирования задания.');if(!parsed.source_hash)lines.push('Предупреждение: source_hash отсутствует, результат нельзя однозначно связать с последним заданием.');setLayoutPreviewButtonEnabled(parsed.valid);setLayoutStatus(lines);logAction('Результат вёрстки проверен',{task_id:parsed.task_id,source_hash:parsed.source_hash,chars:parsed.html_chars||0,warnings:parsed.warnings.length,valid:parsed.valid});return parsed;}
+async function validateExternalLayoutResult(){
+  const raw=fieldValue('external_layout_result');
+  const parsed=parseExternalLayoutResult(raw);
+  parsed.input_hash=await browserHash(raw);
+  parsed.current_source_hash=await calculateLayoutSourceHash();
+  APP_STATE.layout.last_input_hash=parsed.input_hash;
+  APP_STATE.layout.parsed_result=parsed;
+
+  const items=[];
+  parsed.errors.forEach(e=>items.push({raw:e,severity:'critical'}));
+  parsed.warnings.forEach(w=>items.push({raw:w,severity:'warning'}));
+  const hashNotes=[];
+  if(parsed.source_hash&&APP_STATE.layout.source_hash&&parsed.source_hash!==APP_STATE.layout.source_hash)hashNotes.push('source_hash не совпадает с последним заданием.');
+  if(parsed.source_hash&&parsed.current_source_hash&&parsed.source_hash!==parsed.current_source_hash)hashNotes.push('исходная статья изменилась после формирования задания.');
+  if(!parsed.source_hash)hashNotes.push('source_hash отсутствует, результат нельзя однозначно связать с последним заданием.');
+  hashNotes.forEach(note=>items.push({raw:note,severity:'warning'}));
+
+  const chars=String(parsed.html_chars||0).replace(/\B(?=(\d{3})+(?!\d))/g,' ');
+  const headline=parsed.valid?('Готово: HTML собран ('+chars+' символов).'):'Результат не прошёл проверку.';
+  const report=buildResultReport(headline,items);
+  renderResultReport('layout_result_status',report,{gateButton:'[data-action="apply_layout_result"]'});
+  setLayoutPreviewButtonEnabled(parsed.valid);
+
+  logAction('Результат вёрстки проверен',{task_id:parsed.task_id,source_hash:parsed.source_hash,chars:parsed.html_chars||0,valid:parsed.valid,warnings:parsed.warnings.length,warnings_raw:parsed.warnings,errors_raw:parsed.errors,source_hash_notes:hashNotes});
+  return parsed;
+}
 function nonEmpty(v){return Array.isArray(v)?v.length>0:String(v??'').trim().length>0;}
 async function applyExternalLayoutResult(){let parsed=APP_STATE.layout.parsed_result;if(!parsed){parsed=await validateExternalLayoutResult();}const raw=fieldValue('external_layout_result');const inputHash=await browserHash(raw);if(!parsed.input_hash||parsed.input_hash!==inputHash){alert('Поле результата изменилось после проверки. Проверьте результат повторно.');return;}if(!parsed.valid){alert('Нельзя применить результат: есть ошибки проверки.');return;}const resultHash=await browserHash(JSON.stringify(parsed.article));if(APP_STATE.layout.applied_result_hash===resultHash&&!confirm('Этот результат вёрстки уже применён. Применить повторно?'))return;const currentSourceHash=await calculateLayoutSourceHash();if(parsed.source_hash&&currentSourceHash&&parsed.source_hash!==currentSourceHash&&!confirm('source_hash результата не совпадает с текущей итоговой статьёй. Возможно, результат устарел. Всё равно применить?'))return;if(parsed.source_hash&&APP_STATE.layout.source_hash&&parsed.source_hash!==APP_STATE.layout.source_hash&&!confirm('source_hash результата не совпадает с последним заданием. Всё равно применить?'))return;if(!parsed.source_hash&&!confirm('source_hash отсутствует, результат нельзя однозначно связать с последним заданием. Всё равно применить?'))return;if(parsed.fallback_html&&!confirm('Результат распознан как чистый HTML, а не JSON. Всё равно применить?'))return;const oldHtml=fieldValue('result_detail_html');if(!confirm('Применить результат вёрстки?\n\nСтарый HTML: '+oldHtml.length+' символов.\nНовый HTML: '+parsed.article.detail_html.length+' символов.'))return;APP_STATE.layout.previous_article={result_name:fieldValue('result_name'),result_code:fieldValue('result_code'),result_seo_title:fieldValue('result_seo_title'),result_meta_description:fieldValue('result_meta_description'),result_preview:fieldValue('result_preview'),result_short_answer:fieldValue('result_short_answer'),result_detail_html:oldHtml,result_sources:fieldValue('result_sources'),result_related_articles:fieldValue('result_related_articles')};setFieldValue('result_detail_html',parsed.article.detail_html);const map={name:'result_name',code:'result_code',seo_title:'result_seo_title',meta_description:'result_meta_description',preview_text:'result_preview',short_answer:'result_short_answer',sources:'result_sources',related_articles:'result_related_articles'};Object.entries(map).forEach(([k,id])=>{if(nonEmpty(parsed.article[k]))setFieldValue(id,Array.isArray(parsed.article[k])?valueToText(parsed.article[k]):parsed.article[k]);});APP_STATE.layout.applied_result_hash=resultHash;await markUniquenessOutdated();setLayoutStatus(['Результат вёрстки применён.','Теперь XML будет сформирован из обновлённой версии статьи.']);logAction('Результат вёрстки применён',{task_id:parsed.task_id,source_hash:parsed.source_hash,chars:parsed.article.detail_html.length,warnings:parsed.warnings.length});}
 function clearExternalLayoutResult(){setFieldValue('external_layout_result','');APP_STATE.layout.parsed_result=null;setLayoutPreviewButtonEnabled(false);setLayoutStatus('Результат вёрстки ещё не загружен.');}
@@ -1869,7 +2070,7 @@ function clearXmlFieldErrors(){document.querySelectorAll('.xml-field-error').for
 function markXmlFieldError(code){if(XML_SEARCH_TASK_FIELDS.has(code)){document.getElementById(code==='search_intent'?'intentCards':'structCards')?.classList.add('xml-field-error');return;}const el=xmlFieldElement(code);if(!el)return;el.classList.add('xml-field-error');}
 function focusFirstXmlFieldError(missingFields){const first=missingFields[0];if(!first)return;if(XML_SEARCH_TASK_FIELDS.has(first)){goto(1);setTimeout(()=>{const target=document.getElementById(first==='search_intent'?'intentCards':'structCards');target?.scrollIntoView({behavior:'smooth',block:'center'});target?.querySelector('button:not(:disabled)')?.focus({preventScroll:true});},80);return;}const el=xmlFieldElement(first);const step=el?.closest('.step');if(step)goto(Number(step.dataset.step));setTimeout(()=>{el?.scrollIntoView({behavior:'smooth',block:'center'});if(el&&/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(el.tagName)&&el.type!=='hidden')el.focus({preventScroll:true});},80);}
 function handleXmlMissingFields(missingFields,source){clearXmlFieldErrors();missingFields.forEach(markXmlFieldError);focusFirstXmlFieldError(missingFields);const message=formatXmlMissingFieldsMessage(missingFields);setFieldValue('save_result',message);logAction('XML не сформирован: не заполнены обязательные поля',{source,missing_fields:missingFields});alert(message);}
-async function downloadBitrixXml(button){setButtonBusy(button,true);try{const payload=bitrixXmlPayload();const clientMissing=validateXmlRequiredFields(payload);if(clientMissing.length){handleXmlMissingFields(clientMissing,'client');return;}const response=await fetch('export.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/xml, application/json'},body:JSON.stringify(payload)});const type=response.headers.get('Content-Type')||'';if(type.includes('application/json')){const err=await response.json();if(!response.ok||err.success===false){const missing=Array.isArray(err.details?.missing_fields)?err.details.missing_fields.filter(code=>XML_REQUIRED_FIELD_LABELS[code]):[];if(missing.length){handleXmlMissingFields(missing,'server');return;}throw new Error(err.message||'Ошибка формирования XML');}}else if(!response.ok){throw new Error('Ошибка HTTP '+response.status);}clearXmlFieldErrors();const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/);const filename=match?match[1]:'bitrix-article.xml';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);const warningsHeader=response.headers.get('X-TEMED-XML-Warnings')||'';let xmlWarnings=[];if(warningsHeader){try{const parsed=JSON.parse(decodeURIComponent(warningsHeader));if(Array.isArray(parsed))xmlWarnings=parsed.filter(w=>typeof w==='string'&&w.trim()!=='');}catch(e){}}if(xmlWarnings.length){logAction('XML сформирован с предупреждениями',{warnings:xmlWarnings});alert('Предупреждения при формировании XML:\n\n• '+xmlWarnings.join('\n• '));}setFieldValue('save_result',`XML сформирован: ${filename}
+async function downloadBitrixXml(button){setButtonBusy(button,true);clearResultReport('xml_report_cards');try{const payload=bitrixXmlPayload();const clientMissing=validateXmlRequiredFields(payload);if(clientMissing.length){handleXmlMissingFields(clientMissing,'client');return;}const response=await fetch('export.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/xml, application/json'},body:JSON.stringify(payload)});const type=response.headers.get('Content-Type')||'';if(type.includes('application/json')){const err=await response.json();if(!response.ok||err.success===false){const missing=Array.isArray(err.details?.missing_fields)?err.details.missing_fields.filter(code=>XML_REQUIRED_FIELD_LABELS[code]):[];if(missing.length){handleXmlMissingFields(missing,'server');return;}throw new Error(err.message||'Ошибка формирования XML');}}else if(!response.ok){throw new Error('Ошибка HTTP '+response.status);}clearXmlFieldErrors();const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/);const filename=match?match[1]:'bitrix-article.xml';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);const warningsHeader=response.headers.get('X-TEMED-XML-Warnings')||'';let xmlWarnings=[];if(warningsHeader){try{const parsed=JSON.parse(decodeURIComponent(warningsHeader));if(Array.isArray(parsed))xmlWarnings=parsed.filter(w=>typeof w==='string'&&w.trim()!=='');}catch(e){}}if(xmlWarnings.length){logAction('XML сформирован с предупреждениями',{warnings:xmlWarnings});}renderResultReport('xml_report_cards',buildResultReport('Готово: XML сформирован.',xmlWarnings.map(w=>({raw:w,severity:'warning'}))));setFieldValue('save_result',`XML сформирован: ${filename}
 Статус статьи в XML: неактивна`);logAction('XML сформирован',{filename});}catch(e){const message=String(e.message||e||'Ошибка формирования XML');setFieldValue('save_result',message);logAction('XML не сформирован',{error:message});alert(message);}finally{setButtonBusy(button,false);}}
 ['result_name','result_preview','result_short_answer','result_detail_html'].forEach(id=>document.getElementById(id)?.addEventListener('input',markUniquenessOutdated));
 ['result_name','result_code','result_detail_html','primary_query','article_type','author_search','medical_reviewer_search','article_section_id','new_article_section'].forEach(id=>{const el=document.getElementById(id);['input','change'].forEach(eventName=>el?.addEventListener(eventName,()=>{el.classList.remove('xml-field-error');}));});
