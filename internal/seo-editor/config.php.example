@@ -1,9 +1,21 @@
 <?php
+
 return [
+    // bcrypt-хеш пароля редактора (password_hash($password, PASSWORD_BCRYPT)).
     'password_hash' => 'CHANGE_ME',
+
+    // TEMED SEO API (read-only): GET-справочники и POST internal_uniqueness.
+    // URL endpoint'а local/api/seo/index.php.
     'temed_seo_api_url' => 'https://example.ru/local/api/seo/index.php',
+    // Bearer-токен для доступа к TEMED SEO API.
     'temed_seo_api_token' => 'CHANGE_ME',
+
+    // n8n webhook (AI/TEXT.RU и черновики): базовый URL продакшн-вебхука
+    // workflow «TEMED SEO Editor».
     'n8n_base_url' => 'https://n8n.example.ru/webhook/example',
+    // Секрет n8n Header Auth. proxy.php шлёт его в заголовке X-TEMED-SEO-SECRET.
     'n8n_secret' => 'CHANGE_ME',
+
+    // Отображаемое имя пользователя в интерфейсе редактора.
     'editor_user_name' => 'TEMED SEO Editor',
 ];
