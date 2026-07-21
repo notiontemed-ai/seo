@@ -274,8 +274,21 @@
         </div>
         <div class="field">
           <label for="case_transcript">Расшифровка кейса</label>
-          <textarea id="case_transcript" name="case_transcript" rows="8" placeholder="Здесь появится расшифровка аудиокейса. Текст можно редактировать; повторная транскрибация дописывается ниже."></textarea>
+          <textarea id="case_transcript" name="case_transcript" rows="8" placeholder="Здесь появится причёсанная расшифровка аудиокейса. Текст можно редактировать; повторная транскрибация дописывается ниже."></textarea>
           <div class="hint sys">Расшифровка передаётся генератору статьи как внутренний материал врача.</div>
+        </div>
+        <div class="field">
+          <button type="button" class="btn" id="case_show_raw">Показать исходную расшифровку</button>
+          <textarea id="case_transcript_raw" name="case_transcript_raw" rows="6" readonly class="is-hidden" placeholder="Исходная расшифровка Whisper без обработки."></textarea>
+        </div>
+        <div class="field">
+          <label for="case_summary">О чём кейс</label>
+          <textarea id="case_summary" name="case_summary" rows="3" readonly placeholder="Краткая аннотация кейса появится после обработки."></textarea>
+        </div>
+        <div class="field">
+          <label>Куда встроить кейс</label>
+          <div class="selected-list" id="case_topics"></div>
+          <input type="hidden" id="case_topics_json" name="case_topics_json">
         </div>
       </div>
       <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: контекст TEMED →</button></div>

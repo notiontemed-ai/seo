@@ -1365,19 +1365,114 @@ async function runTranscribeCase(button){
     },button);
 
     const transcript=data&&typeof data.transcript==='string'?data.transcript:'';
+    const rawTranscript=data&&typeof data.transcript_raw==='string'?data.transcript_raw:'';
 
-    if(!transcript.trim()){
+    if(!transcript.trim()&&!rawTranscript.trim()){
       throw new Error('Сервис вернул пустую расшифровку.');
     }
 
-    appendCaseTranscript(transcript);
+    applyCaseProcessing(data);
 
-    if(status)status.textContent='Готово';
+    if(status)status.textContent=data&&data.processing_failed?'Готово (без обработки)':'Готово';
   }catch(_){
     if(status)status.textContent='Ошибка транскрибации';
     // callN8n уже показал сообщение об ошибке.
   }
 }
+
+function setCaseRaw(text){
+  const el=document.getElementById('case_transcript_raw');
+  if(el)el.value=String(text||'');
+}
+
+function setCaseSummary(text){
+  setFieldValue('case_summary',String(text||''));
+}
+
+function getCaseTopics(){
+  try{
+    const parsed=JSON.parse(fieldValue('case_topics_json')||'[]');
+    return Array.isArray(parsed)?parsed:[];
+  }catch(_){
+    return [];
+  }
+}
+
+function renderCaseTopics(topics){
+  const box=document.getElementById('case_topics');
+  if(!box)return;
+  const list=Array.isArray(topics)?topics:[];
+
+  if(!list.length){
+    box.innerHTML='<div class="hint">Темы появятся после обработки кейса.</div>';
+    return;
+  }
+
+  box.innerHTML=list.map((topic,index)=>{
+    const title=escapeHtml(String(topic.title||'Без названия'));
+    const query=escapeHtml(String(topic.primary_query||''));
+    const fit=escapeHtml(String(topic.fit||''));
+    return '<div class="draft-card"><b>'+title+'</b>'
+      +(query?'<div class="hint">Запрос: '+query+'</div>':'')
+      +(fit?'<div class="hint">'+fit+'</div>':'')
+      +'<div class="btnrow"><button type="button" class="btn" data-case-topic="'+index+'">Использовать</button></div></div>';
+  }).join('');
+}
+
+function setCaseTopics(topics){
+  const list=(Array.isArray(topics)?topics:[]).map(topic=>({
+    title:String(topic&&topic.title||'').trim(),
+    primary_query:String(topic&&topic.primary_query||'').trim(),
+    fit:String(topic&&topic.fit||'').trim()
+  })).filter(topic=>topic.title||topic.primary_query);
+  setFieldValue('case_topics_json',JSON.stringify(list));
+}
+
+function applyCaseProcessing(data){
+  const raw=data&&typeof data.transcript_raw==='string'?data.transcript_raw:'';
+  const cleaned=data&&typeof data.transcript==='string'?data.transcript:'';
+  setCaseRaw(raw);
+  appendCaseTranscript(cleaned||raw);
+  setCaseSummary(data&&typeof data.summary==='string'?data.summary:'');
+  setCaseTopics(Array.isArray(data&&data.topics)?data.topics:[]);
+}
+
+function applyCaseTopicField(id,value){
+  const text=String(value||'').trim();
+  if(!text)return;
+  const el=document.getElementById(id);
+  if(!el)return;
+  const current=el.value.trim();
+  if(current&&current!==text){
+    const labelText=el.labels&&el.labels[0]?el.labels[0].textContent:id;
+    if(!window.confirm('Поле «'+labelText+'» уже заполнено. Заменить значением из кейса?'))return;
+  }
+  setFieldValue(id,text);
+}
+
+function applyCaseTopic(topic){
+  if(!topic)return;
+  applyCaseTopicField('topic',topic.title);
+  applyCaseTopicField('primary_query',topic.primary_query);
+}
+
+document.getElementById('case_show_raw')?.addEventListener('click',()=>{
+  const view=document.getElementById('case_transcript_raw');
+  const btn=document.getElementById('case_show_raw');
+  if(!view||!btn)return;
+  const hidden=view.classList.toggle('is-hidden');
+  btn.textContent=hidden?'Показать исходную расшифровку':'Скрыть исходную расшифровку';
+});
+
+document.getElementById('case_topics_json')?.addEventListener('input',()=>renderCaseTopics(getCaseTopics()));
+
+document.addEventListener('click',event=>{
+  const button=event.target.closest('[data-case-topic]');
+  if(!button)return;
+  applyCaseTopic(getCaseTopics()[Number(button.dataset.caseTopic)]);
+});
+
+renderCaseTopics(getCaseTopics());
 
 document.getElementById('generated_outline').addEventListener('input',()=>{
   document.getElementById('generated_outline').dataset.approved='N';
@@ -1757,7 +1852,7 @@ let externalPollTimer=null;function stopExternalUniquenessPoll(){if(externalPoll
 function scheduleExternalUniquenessPoll(){stopExternalUniquenessPoll();const state=APP_STATE.uniqueness.external;if(!state||!hasExternalUid(state)||!isActiveExternalStatus(state.status))return;const attempt=Number(state.attempt||0);if(attempt>=40){saveExternalUniquenessState({...state,status:'failed',message:'Проверка TEXT.RU всё ещё выполняется. Результат можно запросить повторно позднее.'});renderExternalUniqueness();return;}const delaySeconds=Math.max(5,Number(state.retry_after_seconds)||(attempt===0?10:15));externalPollTimer=setTimeout(pollExternalUniqueness,delaySeconds*1000);}
 function isTemporaryExternalError(error){const message=String(error?.message||error||'').toLowerCase();return /\b(429|502|503|504)\b/.test(message)||message.includes('timeout')||message.includes('temporar')||message.includes('времен');}
 async function pollExternalUniqueness(){const state=APP_STATE.uniqueness.external;if(!state||!hasExternalUid(state)||!isActiveExternalStatus(state.status))return;const currentHash=await calculateExternalUniquenessHash();if(state.content_hash!==currentHash){await markExternalUniquenessOutdated();return;}try{const data=await callN8n('get_external_uniqueness',{text_uid:state.text_uid,content_hash:state.content_hash},null);if(!data||typeof data!=='object'){throw new Error('TEXT.RU вернул некорректный ответ.');}const responseUid=typeof data.text_uid==='string'&&data.text_uid.trim()?data.text_uid.trim():state.text_uid;if(data.content_hash&&data.content_hash!==currentHash){APP_STATE.uniqueness.external={...state,...data,text_uid:responseUid,status:'outdated'};sessionStorage.removeItem('temed_external_uniqueness');renderExternalUniqueness();return;}const next={...state,...data,text_uid:responseUid,content_hash:data.content_hash||state.content_hash,started_at:state.started_at,attempt:Number(state.attempt||0)+1,status:data.status||'processing'};saveExternalUniquenessState(next);renderExternalUniqueness();if(next.status==='completed'){stopExternalUniquenessPoll();logAction('Проверка TEXT.RU завершена',{text_uid:next.text_uid,uniqueness_percent:next.uniqueness_percent});}else if(isActiveExternalStatus(next.status)){scheduleExternalUniquenessPoll();}else{stopExternalUniquenessPoll();}}catch(e){if(isTemporaryExternalError(e)&&Number(state.attempt||0)<40){saveExternalUniquenessState({...state,attempt:Number(state.attempt||0)+1,retry_after_seconds:Math.max(15,Number(state.retry_after_seconds||0)||15),message:String(e.message||e)});renderExternalUniqueness();scheduleExternalUniquenessPoll();return;}saveExternalUniquenessState({...state,status:'failed',message:String(e.message||e)});stopExternalUniquenessPoll();renderExternalUniqueness();}}
-function collectAssistantContext(){return {mode:APP_STATE.assistant.mode,message:fieldValue('assistant_input'),current_step:Number(document.querySelector('.step.on')?.dataset.step||0),article_context:{workflow_mode:fieldValue('workflow_mode'),task_name:fieldValue('task_name'),topic:fieldValue('topic'),primary_query:fieldValue('primary_query'),secondary_queries:fieldValue('secondary_queries'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),article_type:fieldValue('article_type'),region:fieldValue('region'),reader_goal:fieldValue('reader_goal'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),case_transcript:fieldValue('case_transcript'),clinic_id:fieldValue('clinic_id'),service_id:fieldValue('service_id'),related_articles:[],generated_outline:fieldValue('generated_outline').slice(0,100000),article:currentArticleObject(),uniqueness:APP_STATE.uniqueness},empty_required_fields:[],conversation:APP_STATE.assistant.messages.slice(-20)}}
+function collectAssistantContext(){return {mode:APP_STATE.assistant.mode,message:fieldValue('assistant_input'),current_step:Number(document.querySelector('.step.on')?.dataset.step||0),article_context:{workflow_mode:fieldValue('workflow_mode'),task_name:fieldValue('task_name'),topic:fieldValue('topic'),primary_query:fieldValue('primary_query'),secondary_queries:fieldValue('secondary_queries'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),article_type:fieldValue('article_type'),region:fieldValue('region'),reader_goal:fieldValue('reader_goal'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),case_transcript:fieldValue('case_transcript'),case_summary:fieldValue('case_summary'),case_topics:getCaseTopics(),clinic_id:fieldValue('clinic_id'),service_id:fieldValue('service_id'),related_articles:[],generated_outline:fieldValue('generated_outline').slice(0,100000),article:currentArticleObject(),uniqueness:APP_STATE.uniqueness},empty_required_fields:[],conversation:APP_STATE.assistant.messages.slice(-20)}}
 function renderAssistantMessage(role,text){const list=document.getElementById('assistant_messages');if(!list)return;const div=document.createElement('div');div.className='assistant-message '+role;div.textContent=text;list.appendChild(div);list.scrollTop=list.scrollHeight;}
 function renderAssistantSources(sources){const box=document.getElementById('assistant_sources');if(!box)return;box.textContent='';(sources||[]).forEach(src=>{const chip=document.createElement('span');chip.className='source-chip';chip.textContent=[src.type,src.path||src.action,src.section].filter(Boolean).join(' · ');box.appendChild(chip);});}
 function renderAssistantSuggestions(items){const box=document.getElementById('assistant_suggestions');if(!box)return;box.textContent='';(items||[]).forEach(s=>{const card=document.createElement('div');card.className='suggestion-card';const text=document.createElement('div');text.textContent=`Поле: ${s.field_id}. Предлагается: ${s.label||s.value}. Причина: ${s.reason||''}`;const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Применить';btn.addEventListener('click',()=>applyAssistantSuggestion(s));card.append(text,btn);box.appendChild(card);});}
