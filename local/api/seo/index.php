@@ -11,7 +11,7 @@ require_once __DIR__ . '/lib/ArticleCorpusRepository.php';
 require_once __DIR__ . '/lib/InternalUniquenessService.php';
 require_once __DIR__ . '/lib/SystemManifestService.php';
 
-const API_VERSION = '1.2.0';
+const API_VERSION = '1.3.0';
 const DEFAULT_BASE_URL = 'https://temed.ru';
 const DEFAULT_LIST_LIMIT = 500;
 const MAX_LIST_LIMIT = 1000;
@@ -696,6 +696,192 @@ function getPropertyEnumValues(int $iblockId, string $propertyCode): array
     }
 
     return $items;
+}
+
+
+function getIblockSites(int $iblockId): array
+{
+    $sites = [];
+    $result = CIBlock::GetSite($iblockId);
+
+    while ($site = $result->Fetch()) {
+        $siteId = trim((string)($site['LID'] ?? ''));
+
+        if ($siteId !== '') {
+            $sites[] = $siteId;
+        }
+    }
+
+    return $sites;
+}
+
+function getIblockTypeName(string $typeId): string
+{
+    static $cache = [];
+
+    if ($typeId === '') {
+        return '';
+    }
+
+    if (array_key_exists($typeId, $cache)) {
+        return $cache[$typeId];
+    }
+
+    $languageId = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+    $type = CIBlockType::GetByIDLang($typeId, $languageId);
+
+    $cache[$typeId] = is_array($type) ? (string)($type['NAME'] ?? '') : '';
+
+    return $cache[$typeId];
+}
+
+function getIblockList(array $config): array
+{
+    $items = [];
+    $result = CIBlock::GetList(
+        ['IBLOCK_TYPE_ID' => 'ASC', 'NAME' => 'ASC', 'ID' => 'ASC'],
+        []
+    );
+
+    while ($iblock = $result->GetNext()) {
+        $iblockId = (int)($iblock['ID'] ?? 0);
+        $typeId = (string)($iblock['IBLOCK_TYPE_ID'] ?? '');
+
+        $items[] = [
+            'id' => $iblockId,
+            'name' => (string)($iblock['NAME'] ?? ''),
+            'code' => (string)($iblock['CODE'] ?? ''),
+            'type_id' => $typeId,
+            'type_name' => getIblockTypeName($typeId),
+            'active' => (string)($iblock['ACTIVE'] ?? ''),
+            'sort' => (int)($iblock['SORT'] ?? 0),
+            'sites' => $iblockId > 0 ? getIblockSites($iblockId) : [],
+            'list_page_url' => (string)($iblock['LIST_PAGE_URL'] ?? ''),
+            'section_page_url' => (string)($iblock['SECTION_PAGE_URL'] ?? ''),
+            'detail_page_url' => (string)($iblock['DETAIL_PAGE_URL'] ?? ''),
+            'created_at' => (string)($iblock['DATE_CREATE'] ?? ''),
+            'updated_at' => (string)($iblock['TIMESTAMP_X'] ?? ''),
+        ];
+    }
+
+    return $items;
+}
+
+function stringifyPropertyDefaultValue($value): string
+{
+    if ($value === null || is_array($value) || is_object($value)) {
+        return '';
+    }
+
+    return (string)$value;
+}
+
+function normalizePropertySettings($settings)
+{
+    if (is_array($settings) || is_object($settings)) {
+        return $settings;
+    }
+
+    if (!is_string($settings) || trim($settings) === '') {
+        return [];
+    }
+
+    $serialized = trim($settings);
+    $unserialized = @unserialize($serialized, ['allowed_classes' => false]);
+
+    if ($unserialized !== false || $serialized === 'b:0;') {
+        return is_array($unserialized) || is_object($unserialized)
+            ? $unserialized
+            : $serialized;
+    }
+
+    return $serialized;
+}
+
+function getPropertyEnumDefinitions(int $propertyId): array
+{
+    $items = [];
+    $result = CIBlockPropertyEnum::GetList(
+        ['SORT' => 'ASC', 'VALUE' => 'ASC', 'ID' => 'ASC'],
+        ['PROPERTY_ID' => $propertyId]
+    );
+
+    while ($enum = $result->Fetch()) {
+        $items[] = [
+            'id' => (int)($enum['ID'] ?? 0),
+            'property_id' => (int)($enum['PROPERTY_ID'] ?? $propertyId),
+            'value' => (string)($enum['VALUE'] ?? ''),
+            'xml_id' => (string)($enum['XML_ID'] ?? ''),
+            'sort' => (int)($enum['SORT'] ?? 0),
+            'default' => (string)($enum['DEF'] ?? 'N'),
+        ];
+    }
+
+    return $items;
+}
+
+function getIblockPropertyDefinitions(int $iblockId): array
+{
+    $items = [];
+    $result = CIBlockProperty::GetList(
+        ['SORT' => 'ASC', 'NAME' => 'ASC', 'ID' => 'ASC'],
+        ['IBLOCK_ID' => $iblockId]
+    );
+
+    while ($property = $result->Fetch()) {
+        $code = trim((string)($property['CODE'] ?? ''));
+        $name = trim((string)($property['NAME'] ?? ''));
+
+        if (isSensitiveProperty($code, $name)) {
+            continue;
+        }
+
+        $propertyId = (int)($property['ID'] ?? 0);
+        $type = (string)($property['PROPERTY_TYPE'] ?? '');
+
+        $items[] = [
+            'id' => $propertyId,
+            'iblock_id' => (int)($property['IBLOCK_ID'] ?? $iblockId),
+            'name' => $name,
+            'code' => $code,
+            'type' => $type,
+            'user_type' => (string)($property['USER_TYPE'] ?? ''),
+            'multiple' => (string)($property['MULTIPLE'] ?? 'N'),
+            'required' => (string)($property['IS_REQUIRED'] ?? 'N'),
+            'active' => (string)($property['ACTIVE'] ?? 'Y'),
+            'sort' => (int)($property['SORT'] ?? 0),
+            'linked_iblock_id' => !empty($property['LINK_IBLOCK_ID'])
+                ? (int)$property['LINK_IBLOCK_ID']
+                : null,
+            'default_value' => stringifyPropertyDefaultValue($property['DEFAULT_VALUE'] ?? ''),
+            'with_description' => (string)($property['WITH_DESCRIPTION'] ?? 'N'),
+            'searchable' => (string)($property['SEARCHABLE'] ?? 'N'),
+            'filtrable' => (string)($property['FILTRABLE'] ?? 'N'),
+            'xml_id' => (string)($property['XML_ID'] ?? ''),
+            'list_type' => (string)($property['LIST_TYPE'] ?? ''),
+            'row_count' => (int)($property['ROW_COUNT'] ?? 0),
+            'col_count' => (int)($property['COL_COUNT'] ?? 0),
+            'settings' => normalizePropertySettings($property['USER_TYPE_SETTINGS'] ?? []),
+            'enum_values' => $type === 'L' && $propertyId > 0
+                ? getPropertyEnumDefinitions($propertyId)
+                : [],
+        ];
+    }
+
+    return $items;
+}
+
+function requireExistingIblock(int $iblockId): void
+{
+    $result = CIBlock::GetByID($iblockId);
+
+    if (!$result->Fetch()) {
+        temedSeoSendError(
+            'Инфоблок не найден',
+            404,
+            ['iblock_id' => $iblockId]
+        );
+    }
 }
 
 function getDoctorList(array $config): array
@@ -1530,6 +1716,8 @@ function getCapabilities(): array
             'ping',
             'capabilities',
             'bootstrap',
+            'iblocks',
+            'iblock_properties',
             'doctors',
             'doctor',
             'doctor_properties',
@@ -1557,7 +1745,7 @@ function getCapabilities(): array
             'offset',
         ],
         'methods' => [
-            'GET' => ['ping','capabilities','bootstrap','doctors','doctor','doctor_properties','articles','article','article_properties','article_sections','article_structures','clinics','clinic','prices','price','services','service','dictionaries','system_manifest'],
+            'GET' => ['ping','capabilities','bootstrap','iblocks','iblock_properties','doctors','doctor','doctor_properties','articles','article','article_properties','article_sections','article_structures','clinics','clinic','prices','price','services','service','dictionaries','system_manifest'],
             'POST' => ['internal_uniqueness'],
         ],
         'security' => [
@@ -1626,6 +1814,27 @@ switch ($action) {
 
     case 'bootstrap':
         sendSuccess(getBootstrap($config));
+        break;
+
+    case 'iblocks':
+        $items = getIblockList($config);
+        sendSuccess($items, ['count' => count($items)]);
+        break;
+
+    case 'iblock_properties':
+        $rawIblockId = getStringParam('iblock_id');
+        $iblockId = preg_match('~^[1-9][0-9]*$~', $rawIblockId) === 1
+            ? (int)$rawIblockId
+            : 0;
+
+        if ($iblockId <= 0) {
+            temedSeoSendError('Не передан корректный параметр iblock_id', 400);
+        }
+
+        requireExistingIblock($iblockId);
+
+        $items = getIblockPropertyDefinitions($iblockId);
+        sendSuccess($items, ['count' => count($items), 'iblock_id' => $iblockId]);
         break;
 
     case 'doctors':
