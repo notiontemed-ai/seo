@@ -243,11 +243,30 @@ if (!function_exists('curl_init')) {
 if ($requestMethod === 'POST') {
     $rawBody = file_get_contents('php://input');
 
+    $rawSize = is_string($rawBody) ? strlen($rawBody) : 0;
+
     if ($rawBody === false || trim($rawBody) === '') {
         proxySendJson(['success' => false, 'error' => 'Пустое тело запроса'], 400);
     }
 
-    $requestPayload = json_decode($rawBody, true);
+    $prePayload = json_decode($rawBody, true);
+    $preAction = is_array($prePayload ?? null) && isset($prePayload['action']) && !is_array($prePayload['action'])
+        ? trim((string)$prePayload['action'])
+        : '';
+    $largeDraftActions = ['draft_create', 'draft_save_version', 'draft_restore_version'];
+    $maxRawBytes = in_array($preAction, $largeDraftActions, true) ? 5 * 1024 * 1024 : 1024 * 1024;
+
+    if ($rawSize > $maxRawBytes) {
+        proxySendJson([
+            'success' => false,
+            'action' => $preAction,
+            'error_code' => 'PAYLOAD_TOO_LARGE',
+            'message' => 'Payload too large',
+            'http_status' => 413,
+        ], 413);
+    }
+
+    $requestPayload = $prePayload;
 
     if (json_last_error() !== JSON_ERROR_NONE || !is_array($requestPayload)) {
         proxySendJson(['success' => false, 'error' => 'Тело запроса должно быть корректным JSON'], 400);
@@ -298,6 +317,19 @@ if ($requestMethod === 'POST') {
         'get_external_uniqueness',
         'assistant_refresh_knowledge',
         'create_bitrix_draft',
+        'draft_health',
+        'draft_get_dictionaries',
+        'draft_list',
+        'draft_get',
+        'draft_create',
+        'draft_save_version',
+        'draft_list_versions',
+        'draft_get_version',
+        'draft_restore_version',
+        'draft_delete',
+        'draft_restore',
+        'draft_purge',
+        'draft_log_xml_export',
     ];
 
     $n8nAction = isset($requestPayload['action'])
@@ -338,6 +370,11 @@ if ($requestMethod === 'POST') {
     }
 
     unset($requestPayload['secret']);
+    if (!isset($requestPayload['data']) || !is_array($requestPayload['data'])) {
+        $requestPayload['data'] = [];
+    }
+    unset($requestPayload['data']['secret']);
+    $requestPayload['data']['user'] = (string)($config['editor_user_name'] ?? 'TEMED SEO Editor');
 
     if ($n8nAction === 'assistant_chat') {
         $warnings = [];
