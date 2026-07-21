@@ -61,12 +61,10 @@
 
 
     <section id="draftsView" class="drafts-view is-hidden">
-      <div class="step-head"><h2>Черновики</h2><p>Поиск, версии, корзина и восстановление черновиков из Google Sheets.</p></div>
+      <div class="step-head"><h2>Черновики</h2><p>Поиск, версии и статус черновиков из Google Sheets.</p></div>
       <div class="card draft-toolbar">
-        <input id="draft_search" type="search" placeholder="Поиск по названию, коду, автору">
-        <select id="draft_filter_status"><option value="">Все статусы</option><option value="draft">Черновик</option><option value="review">На проверке</option><option value="approved">Готово</option><option value="archived">Архив</option></select>
-        <select id="draft_filter_step"><option value="">Все этапы</option><option value="brief">Задание</option><option value="article">Текст</option><option value="medical_review">Медредактура</option><option value="layout">Вёрстка</option></select>
-        <select id="draft_filter_scope"><option value="active">Активные</option><option value="archived">Архив</option><option value="trash">Корзина</option></select>
+        <input id="draft_search" type="search" placeholder="Поиск по названию и комментарию">
+        <select id="draft_filter_status"><option value="">Все</option><option value="active">Активные</option><option value="archived">Архив</option></select>
         <button type="button" class="btn" id="draftRefreshBtn">Обновить</button>
       </div>
       <div id="draftList" class="draft-list"><div class="hint">Откройте вкладку, чтобы загрузить список.</div></div>
@@ -775,10 +773,7 @@
   <div id="draftSaveModal" class="draft-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="draft_save_title">
     <div class="draft-modal-shell card">
       <h2 id="draft_save_title">Сохранить черновик</h2>
-      <div class="row2"><div class="field"><label for="draft_save_name">Название</label><input id="draft_save_name" type="text"></div><div class="field"><label for="draft_save_status">Статус</label><input id="draft_save_status" type="text" placeholder="draft"></div></div>
-      <div class="row2"><div class="field"><label for="draft_save_step">Этап</label><input id="draft_save_step" type="text"></div><div class="field"><label for="draft_save_reason">Причина сохранения</label><input id="draft_save_reason" type="text" placeholder="manual"></div></div>
-      <div class="row2"><div class="field"><label for="draft_save_responsible">Ответственный</label><input id="draft_save_responsible" type="text"></div><div class="field"><label for="draft_save_reviewer">Проверяющий врач</label><input id="draft_save_reviewer" type="text"></div></div>
-      <div class="field"><label for="draft_save_due">Срок проверки</label><input id="draft_save_due" type="datetime-local"></div>
+      <div class="row2"><div class="field"><label for="draft_save_name">Название</label><input id="draft_save_name" type="text" required></div><div class="field"><label for="draft_save_status">Статус</label><select id="draft_save_status"><option value="active">Активный</option><option value="archived">Архив</option></select></div></div>
       <div class="field"><label for="draft_save_comment">Комментарий</label><textarea id="draft_save_comment" rows="3"></textarea></div>
       <div class="btnrow"><button type="button" class="btn primary" id="draftSaveBtn">Сохранить</button><button type="button" class="btn" id="draftSaveCancel">Отмена</button></div>
     </div>
