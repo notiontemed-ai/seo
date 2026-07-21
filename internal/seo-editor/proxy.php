@@ -129,11 +129,14 @@ function proxyRelay(array $result, string $upstreamName): void
     }
 
     if (!is_array($result['decoded'])) {
+        $bodyPreview = mb_substr((string)$result['body'], 0, 300);
+
         proxySendJson(
             [
                 'success' => false,
                 'error' => $upstreamName . ' вернул некорректный JSON',
                 'upstream_status' => $result['status'],
+                'details' => 'HTTP ' . $result['status'] . ': ' . $bodyPreview,
             ],
             502
         );
@@ -358,8 +361,8 @@ $n8nActions = [
     'draft_get_version',
     'draft_restore_version',
     'draft_list',
-    'draft_delete',
-    'draft_restore',
+    'draft_archive',
+    'draft_unarchive',
     'draft_purge',
     'transcribe_case',
 ];
