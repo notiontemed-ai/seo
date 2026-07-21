@@ -1122,19 +1122,6 @@
     },
     {
       "parameters": {
-        "jsCode": "const prep = $('Prepare transcribe').first().json;\nconst out = $input.first().json ?? {};\nconst transcript = String(out.text ?? out.transcript ?? '').trim();\n\nreturn [{\n  json: {\n    success: true,\n    action: prep.action ?? 'transcribe_case',\n    request_id: prep.request_id,\n    data: {\n      transcript\n    }\n  }\n}];\n"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        -2608,
-        -800
-      ],
-      "id": "129d18ff-d872-44ba-8f6e-613201e98808",
-      "name": "Format transcribe response"
-    },
-    {
-      "parameters": {
         "respondWith": "json",
         "responseBody": "={{ $json }}",
         "options": {
@@ -1144,11 +1131,69 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        -2384,
+        -1936,
         -800
       ],
       "id": "92f76e3b-7e39-43ad-9118-d3f6192dcbe0",
       "name": "Respond transcribe"
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = String($json.text ?? $json.transcript ?? '').trim();\nconst prep = $('Prepare transcribe').first().json;\n\nconst instructions = `Ты обрабатываешь расшифровку голосового сообщения врача — клинический кейс для медицинской статьи. Задачи: (1) Причесать текст: исправить ошибки распознавания, особенно в медицинских терминах, названиях препаратов (МНН и торговые), дозировках, аббревиатурах (МРТ, ЭКГ, СОЭ и т.п.); расставить пунктуацию и абзацы; убрать слова-паразиты и повторы устной речи; НЕ добавлять фактов, которых нет в исходнике, НЕ менять клиническое содержание, дозировки и числа; если фрагмент неразборчив — пометить [неразборчиво]. (2) Написать аннотацию кейса в 2–4 предложениях: профиль/диагноз, что примечательного, к какому исходу пришли. (3) Предложить 4–6 тем статей, где кейс уместен: каждая — рабочее название + основной поисковый запрос + одна строка, чем кейс усилит статью. Ответ строго JSON без markdown и без пояснений вокруг JSON: {\"cleaned_transcript\": \"...\", \"summary\": \"...\", \"topics\": [{\"title\": \"...\", \"primary_query\": \"...\", \"fit\": \"...\"}]}`;\n\nconst prompt = `${instructions}\n\nИСХОДНАЯ РАСШИФРОВКА:\n${raw}\n`;\n\nreturn [{\n  json: {\n    action: prep.action ?? 'transcribe_case',\n    request_id: prep.request_id,\n    transcript_raw: raw,\n    prompt\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2608,
+        -800
+      ],
+      "id": "fc10854b-528b-4966-815f-0d2f150d1952",
+      "name": "Prepare case processing"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-5.4-mini",
+          "mode": "id"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "={{ $json.prompt }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -2384,
+        -800
+      ],
+      "id": "f438dda5-4c2f-4dfe-b960-e0d94d25a23c",
+      "name": "Process case model",
+      "credentials": {
+        "openAiApi": {
+          "id": "AYsswqQnu0370Vfk",
+          "name": "OpenAi [ temed | cid ]"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const prep = $('Prepare case processing').first().json;\nconst transcriptRaw = String(prep.transcript_raw ?? '').trim();\n\nlet raw =\n  $json.message?.content\n  ?? $json.text\n  ?? $json.content\n  ?? $json.output\n  ?? $json.response\n  ?? '';\n\nif (typeof raw !== 'string') {\n  raw = JSON.stringify(raw);\n}\n\nraw = raw\n  .trim()\n  .replace(/^```json\\s*/i, '')\n  .replace(/^```\\s*/i, '')\n  .replace(/\\s*```$/i, '')\n  .trim();\n\nfunction extractObject(text) {\n  try {\n    return JSON.parse(text);\n  } catch (_) {}\n\n  const start = text.indexOf('{');\n  const end = text.lastIndexOf('}');\n\n  if (start >= 0 && end > start) {\n    return JSON.parse(text.slice(start, end + 1));\n  }\n\n  throw new Error('JSON object not found');\n}\n\nconst base = {\n  success: true,\n  action: prep.action ?? 'transcribe_case',\n  request_id: prep.request_id\n};\n\ntry {\n  const parsed = extractObject(raw);\n\n  if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {\n    throw new Error('Model returned non-object JSON');\n  }\n\n  const cleaned = String(parsed.cleaned_transcript ?? '').trim();\n  const summary = String(parsed.summary ?? '').trim();\n  const topics = Array.isArray(parsed.topics)\n    ? parsed.topics.map((t) => ({\n        title: String(t?.title ?? '').trim(),\n        primary_query: String(t?.primary_query ?? '').trim(),\n        fit: String(t?.fit ?? '').trim()\n      })).filter((t) => t.title || t.primary_query)\n    : [];\n\n  return [{\n    json: {\n      ...base,\n      data: {\n        transcript_raw: transcriptRaw,\n        transcript: cleaned || transcriptRaw,\n        summary,\n        topics\n      },\n      http_status: 200\n    }\n  }];\n} catch (error) {\n  return [{\n    json: {\n      ...base,\n      processing_failed: true,\n      data: {\n        transcript_raw: transcriptRaw,\n        transcript: transcriptRaw,\n        summary: '',\n        topics: [],\n        processing_failed: true\n      },\n      details: {\n        error: String(error.message || error),\n        raw_preview: raw.slice(0, 2000)\n      },\n      http_status: 200\n    }\n  }];\n}\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -2160,
+        -800
+      ],
+      "id": "4faabdeb-1000-411a-a94a-f3d1597fa44c",
+      "name": "Parse case JSON"
     }
   ],
   "connections": {
@@ -1664,14 +1709,36 @@
       "main": [
         [
           {
-            "node": "Format transcribe response",
+            "node": "Prepare case processing",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Format transcribe response": {
+    "Prepare case processing": {
+      "main": [
+        [
+          {
+            "node": "Process case model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process case model": {
+      "main": [
+        [
+          {
+            "node": "Parse case JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse case JSON": {
       "main": [
         [
           {
