@@ -242,6 +242,16 @@
             <div class="api-info" id="reviewerInfo"></div>
           </div>
         </div>
+        <div class="row2">
+          <div class="field">
+            <label for="medical_reviewed_at">Дата медицинской проверки</label>
+            <input type="date" id="medical_reviewed_at" name="medical_reviewed_at">
+          </div>
+          <div class="field">
+            <label for="content_updated_at">Дата существенного обновления</label>
+            <input type="date" id="content_updated_at" name="content_updated_at">
+          </div>
+        </div>
         <div class="field">
           <label for="expert_material">Материал или комментарий врача</label>
           <textarea id="expert_material" name="expert_material" rows="7" placeholder="Расшифровка, тезисы, клинический пример, позиция врача…"></textarea>
@@ -278,6 +288,20 @@
           </div>
         </div>
         <div class="hint sys">Выбранные карточки передаются в задание как фактический контекст TEMED. Генератор не должен придумывать параметры услуги или филиала.</div>
+        <div class="row2">
+          <div class="field">
+            <label for="related_service_id">Связанные услуги для публикации</label>
+            <div class="row2"><select id="related_service_id"><option value="">Выберите услугу…</option></select><button type="button" class="btn" data-action="add_related_service">Добавить услугу</button></div>
+            <input type="hidden" id="related_services_json" name="related_services_json">
+            <div class="selected-list" id="selectedRelatedServices"></div>
+          </div>
+          <div class="field">
+            <label for="related_clinic_id">Связанные клиники для публикации</label>
+            <div class="row2"><select id="related_clinic_id"><option value="">Выберите клинику…</option></select><button type="button" class="btn" data-action="add_related_clinic">Добавить клинику</button></div>
+            <input type="hidden" id="related_clinics_json" name="related_clinics_json">
+            <div class="selected-list" id="selectedRelatedClinics"></div>
+          </div>
+        </div>
       </div>
       <div class="card">
         <h3>Связанные материалы</h3>
@@ -495,6 +519,10 @@
           <div class="field">
             <label for="result_meta_description">Meta description</label>
             <textarea id="result_meta_description" name="result_meta_description" rows="3"></textarea>
+          </div>
+          <div class="field">
+            <label for="featured_image_alt">Alt основного изображения</label>
+            <input type="text" id="featured_image_alt" name="featured_image_alt" maxlength="255">
           </div>
         </div>
         <div class="row2">

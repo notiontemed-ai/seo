@@ -14,6 +14,9 @@ const APP_DATA = {
 };
 
 const RELATED_ARTICLES = new Map();
+const RELATED_SERVICES = new Map();
+const RELATED_CLINICS = new Map();
+const SOURCE_IBLOCK_IDS = {legacy:68,new:81};
 
 
 const INTENT_RU={informational:"Информационный",commercial_informational:"Коммерческо-информационный",comparative:"Сравнительный"};
@@ -351,9 +354,15 @@ function syncExistingArticle(){
   document.getElementById('existing_article_source').value=source||'';
 }
 
-function articleKey(article){
-  return String(article.source||'new')+':'+String(article.id);
-}
+function relationId(item){if(typeof item==='string'||typeof item==='number')return String(item).trim();return String(item?.element_id||item?.id||'').trim();}
+function relationIblock(item,fallback=68){return Number(item.source_iblock_id||item.iblock_id||SOURCE_IBLOCK_IDS[item.source||'']||fallback);}
+function relationKey(item,fallback=68){return relationIblock(item,fallback)+':'+relationId(item);}
+function articleKey(article){return relationKey(article, SOURCE_IBLOCK_IDS[article.source||'new']||81);}
+function normalizeArticleRelation(article){const iblock=relationIblock(article, SOURCE_IBLOCK_IDS[article.source||'new']||81);const id=relationId(article);return {element_id:Number(id),id:Number(id),source_iblock_id:iblock,source:article.source||(iblock===68?'legacy':'new'),name:article.name||('Элемент ID '+id),url:article.absolute_url||article.url||'',code:article.code||'',section:article.section||null,summary:article.summary||article.preview_text||''};}
+function relationValues(map){return [...map.values()];}
+function getSelectedRelatedArticles(){return relationValues(RELATED_ARTICLES).map(normalizeArticleRelation);}
+function getSelectedRelatedServices(){return relationValues(RELATED_SERVICES);}
+function getSelectedRelatedClinics(){return relationValues(RELATED_CLINICS);}
 
 function renderRelatedResults(items){
   const container=document.getElementById('relatedSearchResults');
@@ -381,7 +390,7 @@ function renderRelatedResults(items){
     button.textContent=RELATED_ARTICLES.has(articleKey(article))?'Добавлено':'Добавить';
     button.disabled=RELATED_ARTICLES.has(articleKey(article));
     button.addEventListener('click',()=>{
-      RELATED_ARTICLES.set(articleKey(article),article);
+      RELATED_ARTICLES.set(articleKey(article),normalizeArticleRelation(article));
       renderSelectedRelated();
       button.textContent='Добавлено';
       button.disabled=true;
@@ -399,7 +408,7 @@ function renderSelectedRelated(){
 
   textarea.value=items.map(item=>{
     const url=item.absolute_url||item.url||'';
-    return (item.source||'new')+':'+item.id+' | '+item.name+(url?' | '+url:'');
+    return (item.source||'new')+':'+relationId(item)+' | '+item.name+(url?' | '+url:'');
   }).join('\n');
 
   list.innerHTML='';
@@ -416,7 +425,7 @@ function renderSelectedRelated(){
     remove.title='Убрать';
     remove.textContent='×';
     remove.addEventListener('click',()=>{
-      RELATED_ARTICLES.delete(articleKey(item));
+      RELATED_ARTICLES.delete(relationKey(item,81));
       renderSelectedRelated();
       searchRelatedArticles();
     });
@@ -425,6 +434,17 @@ function renderSelectedRelated(){
     list.appendChild(chip);
   });
 }
+
+function syncRelationHidden(inputId,map){const el=document.getElementById(inputId);if(el)el.value=JSON.stringify(relationValues(map));}
+function renderRelationChips(listId,inputId,map,searchFn){syncRelationHidden(inputId,map);const list=document.getElementById(listId);if(!list)return;list.innerHTML='';relationValues(map).forEach(item=>{const chip=document.createElement('span');chip.className='selected-chip';const title=document.createElement('span');title.textContent=item.name||('Элемент ID '+relationId(item));const remove=document.createElement('button');remove.type='button';remove.title='Убрать';remove.textContent='×';remove.addEventListener('click',()=>{map.delete(relationKey(item,item.iblock_id));renderRelationChips(listId,inputId,map,searchFn);if(searchFn)searchFn();});chip.append(title,remove);list.appendChild(chip);});}
+function addRelatedGeneric(selectId,map,iblockId,listId,inputId,items){const select=document.getElementById(selectId);const id=select?.value;if(!id)return;const found=(items||[]).find(item=>String(item.id)===String(id));const entry={element_id:Number(id),iblock_id:iblockId,name:found?.name||('Элемент ID '+id)};map.set(relationKey(entry,iblockId),entry);renderRelationChips(listId,inputId,map);}
+function renderSelectedServices(){renderRelationChips('selectedRelatedServices','related_services_json',RELATED_SERVICES);}
+function renderSelectedClinics(){renderRelationChips('selectedRelatedClinics','related_clinics_json',RELATED_CLINICS);}
+function addRelatedService(){addRelatedGeneric('related_service_id',RELATED_SERVICES,70,'selectedRelatedServices','related_services_json',APP_DATA.services);}
+function addRelatedClinic(){addRelatedGeneric('related_clinic_id',RELATED_CLINICS,10,'selectedRelatedClinics','related_clinics_json',APP_DATA.clinics);}
+function setRelationMap(map,items,iblockId,lookup=[]){map.clear();(Array.isArray(items)?items:[]).forEach(item=>{const id=relationId(item);if(!id)return;const found=lookup.find(x=>String(x.id)===String(id));const entry={...item,element_id:Number(id),iblock_id:relationIblock(item,iblockId),name:item.name||found?.name||('Элемент ID '+id)};map.set(relationKey(entry,iblockId),entry);});}
+function bitrixDateToInput(value){const s=String(value||'').trim();const m=s.match(/^(\d{2})\.(\d{2})\.(\d{4})$/);if(m)return `${m[3]}-${m[2]}-${m[1]}`;return /^\d{4}-\d{2}-\d{2}$/.test(s)?s:'';}
+function setDefaultPublicationDates(){const today=new Date();const value=new Date(today.getTime()-today.getTimezoneOffset()*60000).toISOString().slice(0,10);['medical_reviewed_at','content_updated_at'].forEach(id=>{const el=document.getElementById(id);if(el&&!el.value)el.value=value;});}
 
 function searchRelatedArticles(){
   const query=document.getElementById('context_search_query').value.trim().toLowerCase();
@@ -545,6 +565,9 @@ function populateBootstrap(data){
     item=>item.name,
     item=>String(item.id)
   );
+  setOptions(document.getElementById('related_service_id'),APP_DATA.services,'— выбрать услугу —',item=>item.name,item=>String(item.id));
+  setOptions(document.getElementById('related_clinic_id'),APP_DATA.clinics,'— выбрать клинику —',item=>item.name,item=>String(item.id));
+  renderSelectedServices();renderSelectedClinics();
 
   const existing=document.getElementById('existing_article_selector');
   existing.innerHTML='<option value="">— выбрать статью —</option>';
@@ -828,6 +851,8 @@ function buildBrief(){
       service:genericContext(APP_DATA.services,data.service_id),
       context_search_query:data.context_search_query,
       related_articles:relatedArticles,
+      related_services:getSelectedRelatedServices(),
+      related_clinics:getSelectedRelatedClinics(),
       internal_facts:data.internal_facts
     },
     sources:{
@@ -884,7 +909,10 @@ function currentArticleObject(){
     short_answer:document.getElementById('result_short_answer').value.trim(),
     detail_html:document.getElementById('result_detail_html').value.trim(),
     sources:parseMaybeJson(document.getElementById('result_sources').value),
-    related_articles:parseMaybeJson(document.getElementById('result_related_articles').value)
+    related_articles:getSelectedRelatedArticles(),
+    related_services:getSelectedRelatedServices(),
+    related_clinics:getSelectedRelatedClinics(),
+    featured_image_alt:document.getElementById('featured_image_alt')?.value.trim()||''
   };
 }
 
@@ -1001,8 +1029,14 @@ function setArticleResult(article){
   document.getElementById('result_short_answer').value=article.short_answer||'';
   document.getElementById('result_detail_html').value=article.detail_html||article.html||'';
   document.getElementById('result_sources').value=valueToText(article.sources||[]);
+  setRelationMap(RELATED_ARTICLES,article.related_articles||[],81,APP_DATA.articles);
+  renderSelectedRelated();
+  setRelationMap(RELATED_SERVICES,article.related_services||[],70,APP_DATA.services);renderSelectedServices();
+  setRelationMap(RELATED_CLINICS,article.related_clinics||[],10,APP_DATA.clinics);renderSelectedClinics();
+  if(document.getElementById('featured_image_alt'))document.getElementById('featured_image_alt').value=article.featured_image_alt||'';
   document.getElementById('result_related_articles').value=valueToText(article.related_articles||[]);
 }
+
 
 function questionsToText(data){
   if(data.questions_text)return data.questions_text;
@@ -1173,6 +1207,16 @@ function propertyTextFromArticle(item,code){
   if(!values.length)return '';
   return values.length===1?values[0]:values.join('\n');
 }
+function propertyXmlIdFromArticle(item,code){
+  const prop=item&&item.properties?item.properties[code]:null;
+  const values=prop&&Array.isArray(prop.values)?prop.values:[];
+  for(const entry of values){
+    const value=entry&&Object.prototype.hasOwnProperty.call(entry,'value')?entry.value:entry;
+    if(value&&typeof value==='object'&&value.xml_id)return String(value.xml_id);
+    if(entry&&typeof entry==='object'&&entry.xml_id)return String(entry.xml_id);
+  }
+  return propertyTextFromArticle(item,code);
+}
 
 async function loadExistingArticle(button){
   const id=document.getElementById('existing_article_id').value;
@@ -1225,6 +1269,24 @@ async function loadExistingArticle(button){
       propertyTextFromArticle(item,'SHORT_ANSWER');
     document.getElementById('result_sources').value=
       propertyTextFromArticle(item,'SOURCES');
+    setFieldValue('primary_query',propertyTextFromArticle(item,'PRIMARY_QUERY'));
+    setFieldValue('secondary_queries',propertyTextFromArticle(item,'SECONDARY_QUERIES'));
+    setFieldValue('search_intent',propertyXmlIdFromArticle(item,'SEARCH_INTENT'));
+    setFieldValue('article_type',propertyXmlIdFromArticle(item,'ARTICLE_TYPE'));
+    setFieldValue('region',propertyXmlIdFromArticle(item,'REGION'));
+    setFieldValue('article_template',propertyXmlIdFromArticle(item,'ARTICLE_TEMPLATE')||'default');
+    setFieldValue('article_structure',propertyTextFromArticle(item,'ARTICLE_STRUCTURE'));
+    setFieldValue('article_structure_name',propertyTextFromArticle(item,'ARTICLE_STRUCTURE_NAME'));
+    setFieldValue('article_structure_version',propertyTextFromArticle(item,'ARTICLE_STRUCTURE_VERSION'));
+    setFieldValue('medical_reviewed_at',bitrixDateToInput(propertyTextFromArticle(item,'MEDICAL_REVIEWED_AT')));
+    setFieldValue('content_updated_at',bitrixDateToInput(propertyTextFromArticle(item,'CONTENT_UPDATED_AT')));
+    setFieldValue('featured_image_alt',propertyTextFromArticle(item,'FEATURED_IMAGE_ALT'));
+    syncEnumSelect(document.getElementById('article_type'),'article_type_id','article_type_xml_id');
+    syncEnumSelect(document.getElementById('region'),'region_id','region_xml_id');
+    syncEnumSelect(document.getElementById('article_template'),'article_template_id','article_template_xml_id');
+    setRelationMap(RELATED_ARTICLES,[...propertyValues(item,'RELATED_ARTICLES').map(id=>({element_id:id,source_iblock_id:68,source:'legacy'})),...propertyValues(item,'RELATED_ARTICLES_V2').map(id=>({element_id:id,source_iblock_id:81,source:'new'}))],81,APP_DATA.articles);renderSelectedRelated();
+    setRelationMap(RELATED_SERVICES,propertyValues(item,'RELATED_SERVICES').map(id=>({element_id:id,iblock_id:70})),70,APP_DATA.services);renderSelectedServices();
+    setRelationMap(RELATED_CLINICS,propertyValues(item,'RELATED_CLINICS').map(id=>({element_id:id,iblock_id:10})),10,APP_DATA.clinics);renderSelectedClinics();
 
     logAction('Загружена существующая статья',{
       id,
@@ -1252,6 +1314,8 @@ document.querySelectorAll('[data-action]').forEach(button=>{
     try{
       if(action==='build_brief'){buildBrief();return;}
       if(action==='search_context'){searchRelatedArticles();return;}
+      if(action==='add_related_service'){addRelatedService();return;}
+      if(action==='add_related_clinic'){addRelatedClinic();return;}
       if(action==='build_external_task'){buildExternalTask();return;}
       if(action==='load_external_text'){loadExternalText();return;}
       if(action==='build_layout_task'){await buildLayoutTask();return;}
@@ -1622,11 +1686,11 @@ function renderAssistantSources(sources){const box=document.getElementById('assi
 function renderAssistantSuggestions(items){const box=document.getElementById('assistant_suggestions');if(!box)return;box.textContent='';(items||[]).forEach(s=>{const card=document.createElement('div');card.className='suggestion-card';const text=document.createElement('div');text.textContent=`Поле: ${s.field_id}. Предлагается: ${s.label||s.value}. Причина: ${s.reason||''}`;const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Применить';btn.addEventListener('click',()=>applyAssistantSuggestion(s));card.append(text,btn);box.appendChild(card);});}
 function applyAssistantSuggestion(s){if(!s||!ASSISTANT_ALLOWED_FIELDS.has(s.field_id)){alert('Ассистент предложил неизвестное или запрещённое поле.');return;}const el=document.getElementById(s.field_id);if(!el||el.readOnly){alert('Поле нельзя изменить.');return;}if(el.tagName==='SELECT'&&s.value&&!Array.from(el.options).some(o=>o.value===String(s.value))){alert('Недопустимое значение списка.');return;}const old=el.value;if(!confirm(`Применить предложение?\n\nПоле: ${s.field_id}\nТекущее значение: ${old||'—'}\nПредлагается: ${s.value||'—'}`))return;setFieldValue(s.field_id,s.value);logAction('Применено предложение ассистента',{field_id:s.field_id,old,new:s.value});if(['result_name','result_preview','result_short_answer','result_detail_html'].includes(s.field_id))markUniquenessOutdated();}
 async function sendAssistantMessage(){const input=document.getElementById('assistant_input');const message=input?.value.trim();if(!message)return;APP_STATE.assistant.messages.push({role:'user',content:message});APP_STATE.assistant.messages=APP_STATE.assistant.messages.slice(-20);renderAssistantMessage('user',message);input.value='';try{const data=await callN8n('assistant_chat',collectAssistantContext(),document.getElementById('assistant_send'));if(!data||typeof data!=='object'){throw new Error('Ассистент вернул некорректный ответ.');}const answer=typeof data.answer==='string'&&data.answer.trim()?data.answer.trim():'Ассистент не вернул текст ответа.';APP_STATE.assistant.messages.push({role:'assistant',content:answer});APP_STATE.assistant.messages=APP_STATE.assistant.messages.slice(-20);sessionStorage.setItem('temed_assistant_'+(fieldValue('generation_id')||'draft'),JSON.stringify(APP_STATE.assistant.messages));renderAssistantMessage('assistant',answer);renderAssistantSources(data.sources);renderAssistantSuggestions(data.suggestions);}catch(e){renderAssistantMessage('assistant','Ошибка ассистента: '+String(e.message||e));}}
-const XML_REQUIRED_FIELD_LABELS={name:'Название статьи',code:'Символьный код URL',detail_html:'Полный текст статьи',article_structure:'Структура статьи',article_structure_version:'Версия структуры статьи — повторно выберите структуру статьи',search_intent:'Поисковый интент',article_type:'Тип статьи',author_id:'Автор',medical_reviewer_id:'Проверивший врач',section:'Раздел статьи'};
-const XML_FIELD_TARGETS={name:'result_name',code:'result_code',detail_html:'result_detail_html',article_type:'article_type',author_id:'author_id',medical_reviewer_id:'medical_reviewer_id',section:'article_section_id'};
+const XML_REQUIRED_FIELD_LABELS={name:'Название статьи',code:'Символьный код URL',detail_html:'Полный текст статьи',primary_query:'Основной поисковый запрос',article_structure:'Структура статьи',article_structure_version:'Версия структуры статьи — повторно выберите структуру статьи',search_intent:'Поисковый интент',article_type:'Тип статьи',author_id:'Автор',medical_reviewer_id:'Проверивший врач',section:'Раздел статьи'};
+const XML_FIELD_TARGETS={name:'result_name',code:'result_code',detail_html:'result_detail_html',primary_query:'primary_query',article_type:'article_type',author_id:'author_id',medical_reviewer_id:'medical_reviewer_id',section:'article_section_id'};
 const XML_SEARCH_TASK_FIELDS=new Set(['article_structure','article_structure_version','search_intent']);
 function xmlExportSectionValue(){const sectionId=fieldValue('article_section_id');return sectionId==='__new__'?fieldValue('article_section'):(sectionId||fieldValue('article_section'));}
-function bitrixXmlPayload(){const article=currentArticleObject();return {...article,name:article.name,preview_text:article.preview_text,detail_html:article.detail_html,section:xmlExportSectionValue(),article_structure:fieldValue('article_structure'),article_structure_name:fieldValue('article_structure_name'),article_structure_version:fieldValue('article_structure_version'),search_intent:fieldValue('search_intent'),article_type:fieldValue('article_type'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),region:fieldValue('region'),related_articles:article.related_articles};}
+function bitrixXmlPayload(){const article=currentArticleObject();return {...article,name:article.name,code:article.code,preview_text:article.preview_text,detail_html:article.detail_html,section:xmlExportSectionValue(),primary_query:fieldValue('primary_query'),secondary_queries:fieldValue('secondary_queries'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),article_structure_name:fieldValue('article_structure_name'),article_structure_version:fieldValue('article_structure_version'),short_answer:fieldValue('result_short_answer'),region:fieldValue('region'),region_xml_id:fieldValue('region_xml_id'),article_template:fieldValue('article_template'),article_template_xml_id:fieldValue('article_template_xml_id'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),medical_reviewed_at:fieldValue('medical_reviewed_at'),content_updated_at:fieldValue('content_updated_at'),sources:article.sources,related_articles:getSelectedRelatedArticles(),related_services:getSelectedRelatedServices(),related_clinics:getSelectedRelatedClinics(),article_type:fieldValue('article_type'),article_type_xml_id:fieldValue('article_type_xml_id'),featured_image_alt:fieldValue('featured_image_alt')};}
 function validateXmlRequiredFields(payload){return Object.keys(XML_REQUIRED_FIELD_LABELS).filter(code=>!String(payload?.[code]??'').trim());}
 function formatXmlMissingFieldsMessage(missingFields){const labels=missingFields.map(code=>XML_REQUIRED_FIELD_LABELS[code]||code);return `Не удалось сформировать XML.\n\nНе заполнены обязательные поля:\n• ${labels.join('\n• ')}\n\nПервое незаполненное поле выделено в редакторе.\n\nИсправьте указанные поля и повторите экспорт.`;}
 function xmlFieldElement(code){if(code==='author_id')return document.getElementById('author_search')||document.getElementById('author_id');if(code==='medical_reviewer_id')return document.getElementById('medical_reviewer_search')||document.getElementById('medical_reviewer_id');if(code==='section'&&fieldValue('article_section_id')==='__new__')return document.getElementById('new_article_section')||document.getElementById('article_section_id');return document.getElementById(XML_FIELD_TARGETS[code]||code);}
@@ -1637,7 +1701,7 @@ function handleXmlMissingFields(missingFields,source){clearXmlFieldErrors();miss
 async function downloadBitrixXml(button){setButtonBusy(button,true);try{const payload=bitrixXmlPayload();const clientMissing=validateXmlRequiredFields(payload);if(clientMissing.length){handleXmlMissingFields(clientMissing,'client');return;}const response=await fetch('export.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/xml, application/json'},body:JSON.stringify(payload)});const type=response.headers.get('Content-Type')||'';if(type.includes('application/json')){const err=await response.json();if(!response.ok||err.success===false){const missing=Array.isArray(err.details?.missing_fields)?err.details.missing_fields.filter(code=>XML_REQUIRED_FIELD_LABELS[code]):[];if(missing.length){handleXmlMissingFields(missing,'server');return;}throw new Error(err.message||'Ошибка формирования XML');}}else if(!response.ok){throw new Error('Ошибка HTTP '+response.status);}clearXmlFieldErrors();const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/);const filename=match?match[1]:'bitrix-article.xml';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);setFieldValue('save_result',`XML сформирован: ${filename}
 Статус статьи в XML: неактивна`);logAction('XML сформирован',{filename});}catch(e){const message=String(e.message||e||'Ошибка формирования XML');setFieldValue('save_result',message);logAction('XML не сформирован',{error:message});alert(message);}finally{setButtonBusy(button,false);}}
 ['result_name','result_preview','result_short_answer','result_detail_html'].forEach(id=>document.getElementById(id)?.addEventListener('input',markUniquenessOutdated));
-['result_name','result_code','result_detail_html','article_type','author_search','medical_reviewer_search','article_section_id','new_article_section'].forEach(id=>{const el=document.getElementById(id);['input','change'].forEach(eventName=>el?.addEventListener(eventName,()=>{el.classList.remove('xml-field-error');}));});
+['result_name','result_code','result_detail_html','primary_query','article_type','author_search','medical_reviewer_search','article_section_id','new_article_section'].forEach(id=>{const el=document.getElementById(id);['input','change'].forEach(eventName=>el?.addEventListener(eventName,()=>{el.classList.remove('xml-field-error');}));});
 intentCards?.addEventListener('click',()=>intentCards.classList.remove('xml-field-error'));
 structCards?.addEventListener('click',()=>structCards.classList.remove('xml-field-error'));
 document.getElementById('assistant_toggle')?.addEventListener('click',()=>document.getElementById('assistant_panel')?.classList.toggle('open'));
@@ -1726,3 +1790,5 @@ window.collectDraftSnapshot=collectDraftSnapshot;window.applyDraftSnapshot=apply
 document.addEventListener('input',event=>{if(event.target?.closest('#articleForm'))markDraftDirty();});
 document.addEventListener('click',event=>{const tab=event.target.closest('[data-top-tab]');if(tab){document.querySelectorAll('[data-top-tab]').forEach(el=>el.classList.toggle('on',el===tab));document.querySelector('.content')?.classList.toggle('is-hidden',tab.dataset.topTab==='drafts');document.getElementById('draftsView')?.classList.toggle('is-hidden',tab.dataset.topTab!=='drafts');if(tab.dataset.topTab==='drafts')refreshDraftList();}if(event.target.id==='draftSaveBtn')saveCurrentDraft(event.target);if(event.target.id==='draftOpenSaveModal')openDraftSaveModal();if(event.target.id==='draftSaveCancel')document.getElementById('draftSaveModal')?.classList.add('is-hidden');if(event.target.id==='draftRefreshBtn')refreshDraftList();});
 renderDraftState();
+
+setDefaultPublicationDates();

@@ -9,7 +9,9 @@ final class BitrixArticleXmlExporter
         'SEARCH_INTENT' => '850', 'SHORT_ANSWER' => '851', 'REGION' => '852',
         'AUTHOR' => '853', 'MEDICAL_REVIEWER' => '854', 'MEDICAL_REVIEWED_AT' => '855',
         'CONTENT_UPDATED_AT' => '856', 'SOURCES' => '857', 'RELATED_ARTICLES' => '858',
-        'ARTICLE_TEMPLATE' => '864',
+        'ARTICLE_TEMPLATE' => '864', 'ARTICLE_STRUCTURE' => '865', 'ARTICLE_STRUCTURE_NAME' => '866',
+        'ARTICLE_STRUCTURE_VERSION' => '867', 'RELATED_ARTICLES_V2' => '868',
+        'RELATED_SERVICES' => '869', 'RELATED_CLINICS' => '870', 'FEATURED_IMAGE_ALT' => '871',
     ];
 
     /** @var list<string> */
@@ -21,32 +23,23 @@ final class BitrixArticleXmlExporter
         $this->warnings = [];
         $this->filledProperties = 0;
         $template = dirname(__DIR__, 3) . '/tests/fixtures/bitrix-iblock-81-reference.xml';
-        if (!is_file($template)) {
-            $template = dirname(__DIR__, 3) . '/../tests/fixtures/bitrix-iblock-81-reference.xml';
-        }
+        if (!is_file($template)) $template = dirname(__DIR__, 3) . '/../tests/fixtures/bitrix-iblock-81-reference.xml';
         $doc = new DOMDocument('1.0', 'UTF-8');
         $doc->formatOutput = true;
         $doc->preserveWhiteSpace = false;
-        if (is_file($template)) {
-            $doc->load($template);
-        } else {
+        if (is_file($template)) $doc->load($template);
+        else {
             $root = $doc->appendChild($doc->createElement('КоммерческаяИнформация'));
             $root->setAttribute('ВерсияСхемы', '2.021');
-            $catalog = $root->appendChild($doc->createElement('Каталог'));
-            $catalog->appendChild($doc->createElement('Товары'));
+            $root->appendChild($doc->createElement('Каталог'))->appendChild($doc->createElement('Товары'));
         }
-        $root = $doc->documentElement;
-        if ($root) {
-            $root->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
-        }
+        $doc->documentElement?->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
         $goods = $doc->getElementsByTagName('Товары')->item(0);
         if (!$goods) {
             $catalog = $doc->getElementsByTagName('Каталог')->item(0) ?: $doc->documentElement?->appendChild($doc->createElement('Каталог'));
             $goods = $catalog->appendChild($doc->createElement('Товары'));
         }
-        while ($goods->firstChild) {
-            $goods->removeChild($goods->firstChild);
-        }
+        while ($goods->firstChild) $goods->removeChild($goods->firstChild);
         $goods->appendChild($this->createProduct($doc, $this->normalizePayload($payload)));
         return $doc;
     }
@@ -64,26 +57,34 @@ final class BitrixArticleXmlExporter
     /** @return array<string,mixed> */
     private function normalizePayload(array $payload): array
     {
-        $html = $this->sanitizeHtml((string)($payload['detail_html'] ?? $payload['result_detail_html'] ?? ''));
+        [$legacy, $v2] = $this->splitArticleRelations($payload['related_articles'] ?? []);
+        $explicitV2 = $this->relationIds($payload['related_articles_v2'] ?? []);
         return [
             'code' => (string)($payload['code'] ?? $payload['result_code'] ?? ''),
             'name' => (string)($payload['name'] ?? $payload['result_name'] ?? ''),
             'preview' => (string)($payload['preview_text'] ?? $payload['result_preview'] ?? ''),
-            'detail' => $html,
+            'detail' => $this->sanitizeHtml((string)($payload['detail_html'] ?? $payload['result_detail_html'] ?? '')),
             'section' => (string)($payload['section'] ?? $payload['article_section_id'] ?? ''),
             'primary_query' => (string)($payload['primary_query'] ?? ''),
             'secondary_queries' => $this->list($payload['secondary_queries'] ?? []),
             'search_intent' => (string)($payload['search_intent_xml_id'] ?? $payload['search_intent'] ?? ''),
             'short_answer' => (string)($payload['short_answer'] ?? $payload['result_short_answer'] ?? ''),
             'region' => (string)($payload['region_xml_id'] ?? $payload['region'] ?? ''),
-            'article_template' => (string)($payload['article_template_xml_id'] ?? $payload['article_structure'] ?? 'default'),
+            'article_template' => (string)($payload['article_template_xml_id'] ?? $payload['article_template'] ?? 'default'),
             'author_id' => (string)($payload['author_id'] ?? ''),
             'medical_reviewer_id' => (string)($payload['medical_reviewer_id'] ?? ''),
-            'medical_reviewed_at' => $this->date((string)($payload['medical_reviewed_at'] ?? 'today')),
-            'content_updated_at' => $this->date((string)($payload['content_updated_at'] ?? 'today')),
+            'medical_reviewed_at' => $this->date((string)($payload['medical_reviewed_at'] ?? '')),
+            'content_updated_at' => $this->date((string)($payload['content_updated_at'] ?? '')),
             'sources' => $this->list($payload['sources'] ?? $payload['result_sources'] ?? []),
-            'related_articles' => $this->related($payload['related_articles'] ?? []),
-            'article_type' => (string)($payload['article_type_xml_id'] ?? $payload['article_type'] ?? 'article'),
+            'related_articles' => $legacy,
+            'related_articles_v2' => $this->unique([...$v2, ...$explicitV2]),
+            'related_services' => $this->relationIds($payload['related_services'] ?? []),
+            'related_clinics' => $this->relationIds($payload['related_clinics'] ?? []),
+            'article_type' => (string)($payload['article_type_xml_id'] ?? $payload['article_type'] ?? ''),
+            'article_structure' => (string)($payload['article_structure'] ?? ''),
+            'article_structure_name' => (string)($payload['article_structure_name'] ?? ''),
+            'article_structure_version' => (string)($payload['article_structure_version'] ?? ''),
+            'featured_image_alt' => strip_tags((string)($payload['featured_image_alt'] ?? '')),
         ];
     }
 
@@ -101,19 +102,16 @@ final class BitrixArticleXmlExporter
         $this->requisite($doc, $product, 'CML2_PREVIEW_TEXT', $p['preview'], 'text');
         $this->requisite($doc, $product, 'CML2_DETAIL_TEXT', $p['detail'], 'html');
         $props = $product->appendChild($doc->createElement('ЗначенияСвойств'));
-        $this->property($doc, $props, 'ARTICLE_TYPE', [$p['article_type']]);
-        $this->property($doc, $props, 'PRIMARY_QUERY', [$p['primary_query']]);
-        $this->property($doc, $props, 'SECONDARY_QUERIES', $p['secondary_queries']);
-        $this->property($doc, $props, 'SEARCH_INTENT', [$p['search_intent']]);
-        $this->property($doc, $props, 'SHORT_ANSWER', [$p['short_answer']]);
-        $this->property($doc, $props, 'REGION', [$p['region']]);
-        $this->property($doc, $props, 'AUTHOR', [$p['author_id']]);
-        $this->property($doc, $props, 'MEDICAL_REVIEWER', [$p['medical_reviewer_id']]);
-        $this->property($doc, $props, 'MEDICAL_REVIEWED_AT', [$p['medical_reviewed_at']]);
-        $this->property($doc, $props, 'CONTENT_UPDATED_AT', [$p['content_updated_at']]);
-        $this->property($doc, $props, 'SOURCES', $p['sources']);
-        $this->property($doc, $props, 'RELATED_ARTICLES', $p['related_articles']);
-        $this->property($doc, $props, 'ARTICLE_TEMPLATE', [$p['article_template'] ?: 'default']);
+        foreach ([
+            'ARTICLE_TYPE'=>[$p['article_type']], 'PRIMARY_QUERY'=>[$p['primary_query']], 'SECONDARY_QUERIES'=>$p['secondary_queries'],
+            'SEARCH_INTENT'=>[$p['search_intent']], 'SHORT_ANSWER'=>[$p['short_answer']], 'REGION'=>[$p['region']],
+            'AUTHOR'=>[$p['author_id']], 'MEDICAL_REVIEWER'=>[$p['medical_reviewer_id']],
+            'MEDICAL_REVIEWED_AT'=>[$p['medical_reviewed_at']], 'CONTENT_UPDATED_AT'=>[$p['content_updated_at']],
+            'SOURCES'=>$p['sources'], 'RELATED_ARTICLES'=>$p['related_articles'], 'ARTICLE_TEMPLATE'=>[$p['article_template'] ?: 'default'],
+            'ARTICLE_STRUCTURE'=>[$p['article_structure']], 'ARTICLE_STRUCTURE_NAME'=>[$p['article_structure_name']],
+            'ARTICLE_STRUCTURE_VERSION'=>[$p['article_structure_version']], 'RELATED_ARTICLES_V2'=>$p['related_articles_v2'],
+            'RELATED_SERVICES'=>$p['related_services'], 'RELATED_CLINICS'=>$p['related_clinics'], 'FEATURED_IMAGE_ALT'=>[$p['featured_image_alt']],
+        ] as $code => $values) $this->property($doc, $props, $code, $values);
         return $product;
     }
 
@@ -145,29 +143,70 @@ final class BitrixArticleXmlExporter
 
     private function date(string $value): string
     {
-        if ($value === '' || $value === 'today') return gmdate('d.m.Y');
+        $value = trim($value);
+        if ($value === '') return '';
+        if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m)) return $m[3] . '.' . $m[2] . '.' . $m[1];
         $ts = strtotime($value);
         return $ts ? gmdate('d.m.Y', $ts) : $value;
     }
 
     private function list(mixed $value): array
     {
+        if (is_string($value) && str_starts_with(trim($value), '[')) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) $value = $decoded;
+        }
         if (is_array($value)) return array_values(array_filter(array_map('strval', $value), static fn($v) => trim($v) !== ''));
-        return array_values(array_filter(array_map('trim', preg_split('/[\r\n;]+/', (string)$value) ?: [])));
+        return array_values(array_filter(array_map('trim', preg_split('/[\r\n;]+/', (string)$value) ?: []), static fn($v) => $v !== ''));
     }
 
-    private function related(mixed $value): array
+    /** @return list<string> */
+    private function relationIds(mixed $value): array
     {
+        if (is_string($value) && str_starts_with(trim($value), '[')) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) $value = $decoded;
+        }
         $items = is_array($value) ? $value : $this->list($value);
         $out = [];
         foreach ($items as $item) {
-            if (is_array($item)) {
-                $iblock = (int)($item['iblock_id'] ?? $item['source_iblock_id'] ?? 68);
-                if ($iblock === 81) { $this->warnings[] = 'Связанная статья инфоблока 81 исключена из RELATED_ARTICLES.'; continue; }
-                $id = (string)($item['element_id'] ?? $item['id'] ?? '');
-            } else { $id = (string)$item; }
-            if (preg_match('/^\d+$/', $id)) $out[] = $id;
+            $id = is_array($item) ? (string)($item['element_id'] ?? $item['id'] ?? '') : (string)$item;
+            if (preg_match('/(?:^|\D)(\d+)(?:\D|$)/', $id, $m) && (int)$m[1] > 0) $out[] = $m[1];
         }
-        return array_values(array_unique($out));
+        return $this->unique($out);
+    }
+
+    /** @return array{0:list<string>,1:list<string>} */
+    private function splitArticleRelations(mixed $value): array
+    {
+        if (is_string($value) && str_starts_with(trim($value), '[')) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) $value = $decoded;
+        }
+        $items = is_array($value) ? $value : $this->list($value);
+        $legacy = []; $v2 = [];
+        foreach ($items as $item) {
+            if (is_array($item)) {
+                $id = (string)($item['element_id'] ?? $item['id'] ?? '');
+                $source = (string)($item['source'] ?? '');
+                $iblock = (int)($item['source_iblock_id'] ?? $item['iblock_id'] ?? ($source === 'legacy' ? 68 : ($source === 'new' ? 81 : 68)));
+            } else {
+                $text = (string)$item;
+                $iblock = str_starts_with($text, 'new:') ? 81 : 68;
+                $id = $text;
+            }
+            if (!preg_match('/(?:^|\D)(\d+)(?:\D|$)/', $id, $m) || (int)$m[1] <= 0) continue;
+            if ($iblock === 81) $v2[] = $m[1];
+            elseif ($iblock === 68) $legacy[] = $m[1];
+        }
+        return [$this->unique($legacy), $this->unique($v2)];
+    }
+
+    /** @param list<string> $values @return list<string> */
+    private function unique(array $values): array
+    {
+        $seen = []; $out = [];
+        foreach ($values as $value) if (!isset($seen[$value])) { $seen[$value] = true; $out[] = $value; }
+        return $out;
     }
 }

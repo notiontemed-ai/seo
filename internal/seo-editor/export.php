@@ -27,10 +27,10 @@ $raw = file_get_contents('php://input');
 $payload = json_decode((string)$raw, true);
 if (json_last_error() !== JSON_ERROR_NONE || !is_array($payload)) jsonError(400, 'Тело запроса должно быть JSON');
 
-$required = ['name','code','detail_html','article_structure','article_structure_version','search_intent','article_type','author_id','medical_reviewer_id','section'];
+$required = ['name','code','detail_html','primary_query','article_structure','article_structure_version','search_intent','article_type','author_id','medical_reviewer_id','section'];
 $missing = [];
 foreach ($required as $field) {
-    if (!isset($payload[$field]) || (is_string($payload[$field]) && trim($payload[$field]) === '')) $missing[] = $field;
+    if (!array_key_exists($field, $payload) || $payload[$field] === null || (is_string($payload[$field]) && trim($payload[$field]) === '') || (is_array($payload[$field]) && count($payload[$field]) === 0)) $missing[] = $field;
 }
 if ($missing) jsonError(422, 'Не удалось сформировать XML: заполните обязательные поля.', ['missing_fields'=>$missing]);
 
