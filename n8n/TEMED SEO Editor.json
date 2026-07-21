@@ -1,5 +1,4 @@
 {
-  "name": "TEMED SEO Editor",
   "nodes": [
     {
       "parameters": {
@@ -12,10 +11,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        -112,
-        560
+        -4176,
+        -32
       ],
-      "id": "70f11f0f-1d3e-4fe8-b0d8-88309b052c11",
+      "id": "de495790-599e-4330-b674-ae9995532fad",
       "name": "Webhook",
       "webhookId": "a5c67045-5c07-49b0-a4bb-b63cf5fb418b",
       "credentials": {
@@ -27,15 +26,15 @@
     },
     {
       "parameters": {
-        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nconst action = String(body.action ?? '').trim();\nconst requestId = String(\n  body.request_id\n  ?? body.requestId\n  ?? `seo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nconst data = body.data ?? body.payload ?? body.brief ?? {};\n\nconst allowedActions = new Set([\n  'health',\n  'research_sources',\n  'generate_outline',\n  'generate_article',\n  'extract_med_questions',\n  'apply_med_answers',\n  'validate_article',\n  'revise_article',\n  'approve_outline',\n  'load_existing_article',\n  'load_dictionaries',\n  'assistant_chat',\n  'start_external_uniqueness',\n  'get_external_uniqueness',\n  'assistant_refresh_knowledge',\n  'create_bitrix_draft',\n  'draft_health',\n  'draft_get_dictionaries',\n  'draft_list',\n  'draft_get',\n  'draft_create',\n  'draft_save_version',\n  'draft_list_versions',\n  'draft_get_version',\n  'draft_restore_version',\n  'draft_delete',\n  'draft_restore',\n  'draft_purge',\n  'draft_log_xml_export'\n]);\nconst isDraftAction = action.startsWith('draft_');\n\nfunction fail(errorCode, message, httpStatus = 400, details = {}) {\n  return [{\n    json: {\n      valid: false,\n      success: false,\n      action,\n      request_id: requestId,\n      error_code: errorCode,\n      message,\n      details,\n      http_status: httpStatus\n    }\n  }];\n}\n\nif (!allowedActions.has(action) && !isDraftAction) {\n  return fail(\n    'UNKNOWN_ACTION',\n    'Неизвестное действие.',\n    400,\n    { allowed_actions: [...allowedActions] }\n  );\n}\n\nconst generationId = String(\n  body.generation_id\n  ?? data.generation_id\n  ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nfunction compactJson(value) {\n  return JSON.stringify(value ?? {}, null, 2);\n}\n\nfunction articleFromPayload(payload) {\n  return payload.article\n    ?? payload.result\n    ?? payload.current_article\n    ?? {\n      name: payload.result_name ?? '',\n      code: payload.result_code ?? '',\n      seo_title: payload.result_seo_title ?? '',\n      meta_description: payload.result_meta_description ?? '',\n      preview_text: payload.result_preview ?? '',\n      short_answer: payload.result_short_answer ?? '',\n      detail_html: payload.result_detail_html ?? '',\n      sources: payload.result_sources ?? '',\n      related_articles: payload.result_related_articles ?? ''\n    };\n}\n\nconst commonRules = `\nТы — медицинский SEO-редактор сети клиник TEMED.\n\nОБЯЗАТЕЛЬНЫЕ ПРАВИЛА:\n1. Работай только с данными, переданными в JSON. Не придумывай факты о TEMED, врачах, клиниках, методах, ценах, длительности, количестве процедур и результатах.\n2. Внутренние факты TEMED и комментарии врача имеют приоритет. Их смысл нельзя менять.\n3. Не ставь заочный диагноз и не назначай лечение конкретному читателю.\n4. Не обещай результат и не используй гарантии эффективности.\n5. Числа и медицинские утверждения допускаются только при наличии указанного источника. Если источника нет, убери точное число или пометь утверждение как требующее проверки.\n6. Не выдумывай статьи, исследования, DOI, PMID, URL, клинические рекомендации или цитаты.\n7. Ответ возвращай только как один корректный JSON-объект без markdown и без пояснений вокруг JSON.\n8. Язык результата — русский.\n`;\n\nlet direct = false;\nlet response = null;\nlet prompt = '';\n\nif (action === 'health') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      status: 'ok',\n      workflow: 'TEMED SEO Editor v1',\n      ai_model: 'gpt-5.4-mini'\n    }\n  };\n}\n\nif (action === 'approve_outline') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      approved: true,\n      outline: data.generated_outline ?? data.outline ?? ''\n    }\n  };\n}\n\nif (action === 'load_existing_article' || action === 'load_dictionaries') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      handled_by: 'TEMED SEO PHP proxy',\n      message: 'Это действие выполняется напрямую через защищённый PHP proxy, без n8n.'\n    }\n  };\n}\n\n\nif (action === 'assistant_chat') {\n  const systemContext = body.system_context ?? data.system_context ?? {};\n  prompt = `${commonRules}\n\nЗАДАЧА:\nОтветь как ассистент редактора TEMED SEO Editor в режиме ${data.mode ?? 'article'}. Используй live system_manifest, article_structures, summary dictionaries и текущие поля статьи. Верни JSON строго в формате: {\"answer\":\"\",\"sources\":[],\"suggestions\":[],\"warnings\":[]}. Suggestions не применяются автоматически и требуют requires_confirmation=true. Не предлагай правки секретов, endpoint, credential, config и hidden security fields. Медицинские формулировки помечай как требующие ручного подтверждения.\n\nLIVE SYSTEM CONTEXT:\n${compactJson(systemContext)}\n\nARTICLE/EDITOR CONTEXT:\n${compactJson(data)}\n`;\n}\n\n\nif (action === 'assistant_refresh_knowledge') {\n  direct = true;\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {status: 'scheduled', allowed_files: ['README.md', 'docs/**', 'internal/seo-editor/assets/js/**', 'n8n/TEMED SEO Editor.json']}};\n}\n\nif (action === 'create_bitrix_draft') {\n  direct = true;\n  response = {\n    success: false,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    error_code: 'WRITE_API_DISABLED',\n    message: 'Запись в Bitrix отключена. Workflow работает в безопасном read-only режиме.',\n    http_status: 501\n  };\n}\n\nif (action === 'research_sources') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь исследовательский пакет по теме статьи.\n\nВажно: у тебя нет права объявлять источник проверенным только по названию или URL.\nРаздели источники на:\n- user_provided — источник дал редактор;\n- metadata_only — можно оценить только по переданным метаданным;\n- needs_manual_verification — требуется ручная проверка полного текста;\n- rejected — источник не подходит или недостаточно данных.\n\nНе выдумывай новые библиографические записи.\nДопускается предложить только поисковые запросы для PubMed, Google Scholar, российских клинических рекомендаций и сайтов профильных профессиональных обществ.\n\nФОРМАТ:\n{\n  \"approved_sources_text\": \"строки только по источникам, которые можно оставить редактору на утверждение\",\n  \"candidates\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"source_type\": \"\",\n      \"status\": \"user_provided|metadata_only|needs_manual_verification|rejected\",\n      \"why_relevant\": \"\",\n      \"limitations\": \"\"\n    }\n  ],\n  \"search_queries\": [\n    {\n      \"database\": \"PubMed|Google Scholar|Клинические рекомендации РФ|Профессиональное общество\",\n      \"query\": \"\",\n      \"purpose\": \"\"\n    }\n  ],\n  \"claims_needing_sources\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_outline') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nСоставь подробный план медицинской SEO-статьи строго по выбранной структуре.\nЕсли в данных передан structure_config, соблюдай порядок, обязательность, repeat, instructions, global_instructions, forbidden и seo.\nНе пиши саму статью.\n\nФОРМАТ:\n{\n  \"outline_text\": \"редактируемый текстовый план\",\n  \"outline\": [\n    {\n      \"order\": 1,\n      \"block\": \"\",\n      \"heading\": \"\",\n      \"heading_level\": \"intro|h2|h3\",\n      \"required\": true,\n      \"purpose\": \"\",\n      \"key_points\": [],\n      \"source_requirements\": [],\n      \"medical_review_points\": []\n    }\n  ],\n  \"missing_information\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_article') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь полный черновик статьи по утверждённому плану и выбранной структуре.\n\nТРЕБОВАНИЯ К HTML:\n- detail_html содержит только содержимое статьи, без html, head и body;\n- используй h2, h3, p, ul, ol, table, blockquote;\n- не используй inline-стили, script, iframe;\n- первый абзац должен сразу отвечать на основной запрос, если структура не требует иного;\n- источники в тексте должны соответствовать массиву sources;\n- дисклеймер обязателен;\n- не добавляй несуществующие формы, цены и контакты.\n\nФОРМАТ:\n{\n  \"name\": \"\",\n  \"code\": \"\",\n  \"seo_title\": \"\",\n  \"meta_description\": \"\",\n  \"preview_text\": \"\",\n  \"short_answer\": \"\",\n  \"detail_html\": \"\",\n  \"sources\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"identifier\": \"\",\n      \"used_for\": []\n    }\n  ],\n  \"related_articles\": [],\n  \"medical_review_questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\"\n    }\n  ],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'extract_med_questions') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроведи медицинскую редакторскую проверку готовой статьи.\nНе переписывай текст.\nВыдели только формулировки, которые требуют подтверждения врача:\n- конкретные схемы, сроки, дозировки, число процедур;\n- показания и противопоказания;\n- причинно-следственные медицинские утверждения;\n- прогноз и ожидаемый эффект;\n- спорные или слишком категоричные утверждения;\n- данные без источника.\n\nФОРМАТ:\n{\n  \"questions_text\": \"пронумерованный список для передачи врачу\",\n  \"questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\",\n      \"suggested_safe_wording\": \"\"\n    }\n  ],\n  \"critical_count\": 0,\n  \"warnings\": []\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'apply_med_answers') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nВнеси ответы медицинского редактора в статью точечно.\nМеняй только те фрагменты, к которым относятся ответы.\nНе улучшай стиль остального текста и не генерируй статью заново.\nЕсли ответ врача неоднозначен, не меняй фрагмент и добавь предупреждение.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changes\": [\n    {\n      \"question_id\": \"\",\n      \"before\": \"\",\n      \"after\": \"\",\n      \"status\": \"changed|deleted|unchanged\"\n    }\n  ],\n  \"unresolved_questions\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nВОПРОСЫ И ОТВЕТЫ:\n${compactJson({\n  questions: data.med_questions ?? data.questions ?? '',\n  answers: data.med_answers ?? data.answers ?? ''\n})}\n`;\n}\n\nif (action === 'validate_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроверь статью перед публикацией. Ничего не переписывай.\n\nПРОВЕРКИ:\n- наличие обязательных блоков выбранной структуры;\n- выполнение дополнительных требований;\n- нарушения forbidden и YMYL;\n- гарантии результата, заочная диагностика и назначения;\n- числа и медицинские утверждения без источника;\n- соответствие источников тексту;\n- title, description, code, preview, short_answer;\n- HTML: запрещённые теги, незакрытые конструкции, дубли H1;\n- дисклеймер;\n- логичность CTA;\n- соответствие автора и медредактора переданным данным.\n\nФОРМАТ:\n{\n  \"passed\": false,\n  \"score\": 0,\n  \"report_text\": \"\",\n  \"errors\": [\n    {\n      \"code\": \"\",\n      \"severity\": \"critical|major|minor\",\n      \"location\": \"\",\n      \"message\": \"\",\n      \"recommended_fix\": \"\"\n    }\n  ],\n  \"warnings\": [],\n  \"checks\": [\n    {\n      \"name\": \"\",\n      \"passed\": true,\n      \"details\": \"\"\n    }\n  ]\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nТЕХНИЧЕСКОЕ ЗАДАНИЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'revise_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПереработай только фрагменты, прямо указанные в замечаниях.\nНе меняй согласованные части, структуру, факты TEMED и ответы врача без необходимости.\nВерни полный объект статьи после точечной правки.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changed_sections\": [\n    {\n      \"location\": \"\",\n      \"reason\": \"\",\n      \"before\": \"\",\n      \"after\": \"\"\n    }\n  ],\n  \"unresolved_comments\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nЗАМЕЧАНИЯ:\n${compactJson(data.revision_request ?? data.comments ?? data.validation_report ?? '')}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (isDraftAction) {\n  return [{ json: { valid: true, success: true, direct: false, is_draft_action: true, action, request_id: requestId, generation_id: generationId, data, prompt: '', response: null, http_status: 200 } }];\n}\n\nif (!direct && !prompt) {\n  return fail(\n    'ACTION_NOT_IMPLEMENTED',\n    'Для действия не сформирован обработчик.',\n    501\n  );\n}\n\nreturn [{\n  json: {\n    valid: true,\n    success: true,\n    direct,\n    is_draft_action: isDraftAction,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data,\n    prompt,\n    response,\n    http_status: response?.http_status ?? 200\n  }\n}];"
+        "jsCode": "const input = $input.first().json;\nconst body = input.body ?? input;\nconst action = String(body.action ?? '').trim();\nconst requestId = String(\n  body.request_id\n  ?? body.requestId\n  ?? `seo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nconst data = body.data ?? body.payload ?? body.brief ?? {};\n\nconst allowedActions = new Set([\n  'health',\n  'research_sources',\n  'generate_outline',\n  'generate_article',\n  'extract_med_questions',\n  'apply_med_answers',\n  'validate_article',\n  'revise_article',\n  'approve_outline',\n  'load_existing_article',\n  'load_dictionaries',\n  'assistant_chat',\n  'start_external_uniqueness',\n  'get_external_uniqueness',\n  'assistant_refresh_knowledge',\n  'create_bitrix_draft',\n  'draft_health',\n  'draft_get_dictionaries',\n  'draft_list',\n  'draft_get',\n  'draft_create',\n  'draft_save_version',\n  'draft_list_versions',\n  'draft_get_version',\n  'draft_restore_version',\n  'draft_delete',\n  'draft_restore',\n  'draft_purge',\n  'draft_log_xml_export'\n]);\n\nconst isDraftAction = action.startsWith('draft_');\n\nfunction fail(errorCode, message, httpStatus = 400, details = {}) {\n  return [{\n    json: {\n      valid: false,\n      success: false,\n      action,\n      request_id: requestId,\n      error_code: errorCode,\n      message,\n      details,\n      http_status: httpStatus\n    }\n  }];\n}\n\nif (!allowedActions.has(action)) {\n  return fail(\n    'UNKNOWN_ACTION',\n    'Неизвестное действие.',\n    400,\n    { allowed_actions: [...allowedActions] }\n  );\n}\n\nconst generationId = String(\n  body.generation_id\n  ?? data.generation_id\n  ?? `gen-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`\n);\n\nfunction compactJson(value) {\n  return JSON.stringify(value ?? {}, null, 2);\n}\n\nfunction articleFromPayload(payload) {\n  return payload.article\n    ?? payload.result\n    ?? payload.current_article\n    ?? {\n      name: payload.result_name ?? '',\n      code: payload.result_code ?? '',\n      seo_title: payload.result_seo_title ?? '',\n      meta_description: payload.result_meta_description ?? '',\n      preview_text: payload.result_preview ?? '',\n      short_answer: payload.result_short_answer ?? '',\n      detail_html: payload.result_detail_html ?? '',\n      sources: payload.result_sources ?? '',\n      related_articles: payload.result_related_articles ?? ''\n    };\n}\n\nconst commonRules = `\nТы — медицинский SEO-редактор сети клиник TEMED.\n\nОБЯЗАТЕЛЬНЫЕ ПРАВИЛА:\n1. Работай только с данными, переданными в JSON. Не придумывай факты о TEMED, врачах, клиниках, методах, ценах, длительности, количестве процедур и результатах.\n2. Внутренние факты TEMED и комментарии врача имеют приоритет. Их смысл нельзя менять.\n3. Не ставь заочный диагноз и не назначай лечение конкретному читателю.\n4. Не обещай результат и не используй гарантии эффективности.\n5. Числа и медицинские утверждения допускаются только при наличии указанного источника. Если источника нет, убери точное число или пометь утверждение как требующее проверки.\n6. Не выдумывай статьи, исследования, DOI, PMID, URL, клинические рекомендации или цитаты.\n7. Ответ возвращай только как один корректный JSON-объект без markdown и без пояснений вокруг JSON.\n8. Язык результата — русский.\n`;\n\nlet direct = false;\nlet response = null;\nlet prompt = '';\n\nif (action === 'health') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      status: 'ok',\n      workflow: 'TEMED SEO Editor v1',\n      ai_model: 'gpt-5.4-mini'\n    }\n  };\n}\n\nif (action === 'approve_outline') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      approved: true,\n      outline: data.generated_outline ?? data.outline ?? ''\n    }\n  };\n}\n\nif (action === 'load_existing_article' || action === 'load_dictionaries') {\n  direct = true;\n  response = {\n    success: true,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data: {\n      handled_by: 'TEMED SEO PHP proxy',\n      message: 'Это действие выполняется напрямую через защищённый PHP proxy, без n8n.'\n    }\n  };\n}\n\n\nif (action === 'assistant_chat') {\n  const systemContext = body.system_context ?? data.system_context ?? {};\n  prompt = `${commonRules}\n\nЗАДАЧА:\nОтветь как ассистент редактора TEMED SEO Editor в режиме ${data.mode ?? 'article'}. Используй live system_manifest, article_structures, summary dictionaries и текущие поля статьи. Верни JSON строго в формате: {\"answer\":\"\",\"sources\":[],\"suggestions\":[],\"warnings\":[]}. Suggestions не применяются автоматически и требуют requires_confirmation=true. Не предлагай правки секретов, endpoint, credential, config и hidden security fields. Медицинские формулировки помечай как требующие ручного подтверждения.\n\nLIVE SYSTEM CONTEXT:\n${compactJson(systemContext)}\n\nARTICLE/EDITOR CONTEXT:\n${compactJson(data)}\n`;\n}\n\n\nif (action === 'assistant_refresh_knowledge') {\n  direct = true;\n  response = {success: true, action, request_id: requestId, generation_id: generationId, data: {status: 'scheduled', allowed_files: ['README.md', 'docs/**', 'internal/seo-editor/assets/js/**', 'n8n/TEMED SEO Editor.json']}};\n}\n\nif (action === 'create_bitrix_draft') {\n  direct = true;\n  response = {\n    success: false,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    error_code: 'WRITE_API_DISABLED',\n    message: 'Запись в Bitrix отключена. Workflow работает в безопасном read-only режиме.',\n    http_status: 501\n  };\n}\n\nif (action === 'research_sources') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь исследовательский пакет по теме статьи.\n\nВажно: у тебя нет права объявлять источник проверенным только по названию или URL.\nРаздели источники на:\n- user_provided — источник дал редактор;\n- metadata_only — можно оценить только по переданным метаданным;\n- needs_manual_verification — требуется ручная проверка полного текста;\n- rejected — источник не подходит или недостаточно данных.\n\nНе выдумывай новые библиографические записи.\nДопускается предложить только поисковые запросы для PubMed, Google Scholar, российских клинических рекомендаций и сайтов профильных профессиональных обществ.\n\nФОРМАТ:\n{\n  \"approved_sources_text\": \"строки только по источникам, которые можно оставить редактору на утверждение\",\n  \"candidates\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"source_type\": \"\",\n      \"status\": \"user_provided|metadata_only|needs_manual_verification|rejected\",\n      \"why_relevant\": \"\",\n      \"limitations\": \"\"\n    }\n  ],\n  \"search_queries\": [\n    {\n      \"database\": \"PubMed|Google Scholar|Клинические рекомендации РФ|Профессиональное общество\",\n      \"query\": \"\",\n      \"purpose\": \"\"\n    }\n  ],\n  \"claims_needing_sources\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_outline') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nСоставь подробный план медицинской SEO-статьи строго по выбранной структуре.\nЕсли в данных передан structure_config, соблюдай порядок, обязательность, repeat, instructions, global_instructions, forbidden и seo.\nНе пиши саму статью.\n\nФОРМАТ:\n{\n  \"outline_text\": \"редактируемый текстовый план\",\n  \"outline\": [\n    {\n      \"order\": 1,\n      \"block\": \"\",\n      \"heading\": \"\",\n      \"heading_level\": \"intro|h2|h3\",\n      \"required\": true,\n      \"purpose\": \"\",\n      \"key_points\": [],\n      \"source_requirements\": [],\n      \"medical_review_points\": []\n    }\n  ],\n  \"missing_information\": [],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'generate_article') {\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПодготовь полный черновик статьи по утверждённому плану и выбранной структуре.\n\nТРЕБОВАНИЯ К HTML:\n- detail_html содержит только содержимое статьи, без html, head и body;\n- используй h2, h3, p, ul, ol, table, blockquote;\n- не используй inline-стили, script, iframe;\n- первый абзац должен сразу отвечать на основной запрос, если структура не требует иного;\n- источники в тексте должны соответствовать массиву sources;\n- дисклеймер обязателен;\n- не добавляй несуществующие формы, цены и контакты.\n\nФОРМАТ:\n{\n  \"name\": \"\",\n  \"code\": \"\",\n  \"seo_title\": \"\",\n  \"meta_description\": \"\",\n  \"preview_text\": \"\",\n  \"short_answer\": \"\",\n  \"detail_html\": \"\",\n  \"sources\": [\n    {\n      \"title\": \"\",\n      \"url\": \"\",\n      \"identifier\": \"\",\n      \"used_for\": []\n    }\n  ],\n  \"related_articles\": [],\n  \"medical_review_questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\"\n    }\n  ],\n  \"warnings\": []\n}\n\nДАННЫЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'extract_med_questions') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроведи медицинскую редакторскую проверку готовой статьи.\nНе переписывай текст.\nВыдели только формулировки, которые требуют подтверждения врача:\n- конкретные схемы, сроки, дозировки, число процедур;\n- показания и противопоказания;\n- причинно-следственные медицинские утверждения;\n- прогноз и ожидаемый эффект;\n- спорные или слишком категоричные утверждения;\n- данные без источника.\n\nФОРМАТ:\n{\n  \"questions_text\": \"пронумерованный список для передачи врачу\",\n  \"questions\": [\n    {\n      \"id\": \"M1\",\n      \"fragment\": \"\",\n      \"question\": \"\",\n      \"reason\": \"\",\n      \"suggested_safe_wording\": \"\"\n    }\n  ],\n  \"critical_count\": 0,\n  \"warnings\": []\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'apply_med_answers') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nВнеси ответы медицинского редактора в статью точечно.\nМеняй только те фрагменты, к которым относятся ответы.\nНе улучшай стиль остального текста и не генерируй статью заново.\nЕсли ответ врача неоднозначен, не меняй фрагмент и добавь предупреждение.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changes\": [\n    {\n      \"question_id\": \"\",\n      \"before\": \"\",\n      \"after\": \"\",\n      \"status\": \"changed|deleted|unchanged\"\n    }\n  ],\n  \"unresolved_questions\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nВОПРОСЫ И ОТВЕТЫ:\n${compactJson({\n  questions: data.med_questions ?? data.questions ?? '',\n  answers: data.med_answers ?? data.answers ?? ''\n})}\n`;\n}\n\nif (action === 'validate_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПроверь статью перед публикацией. Ничего не переписывай.\n\nПРОВЕРКИ:\n- наличие обязательных блоков выбранной структуры;\n- выполнение дополнительных требований;\n- нарушения forbidden и YMYL;\n- гарантии результата, заочная диагностика и назначения;\n- числа и медицинские утверждения без источника;\n- соответствие источников тексту;\n- title, description, code, preview, short_answer;\n- HTML: запрещённые теги, незакрытые конструкции, дубли H1;\n- дисклеймер;\n- логичность CTA;\n- соответствие автора и медредактора переданным данным.\n\nФОРМАТ:\n{\n  \"passed\": false,\n  \"score\": 0,\n  \"report_text\": \"\",\n  \"errors\": [\n    {\n      \"code\": \"\",\n      \"severity\": \"critical|major|minor\",\n      \"location\": \"\",\n      \"message\": \"\",\n      \"recommended_fix\": \"\"\n    }\n  ],\n  \"warnings\": [],\n  \"checks\": [\n    {\n      \"name\": \"\",\n      \"passed\": true,\n      \"details\": \"\"\n    }\n  ]\n}\n\nСТАТЬЯ:\n${compactJson(article)}\n\nТЕХНИЧЕСКОЕ ЗАДАНИЕ:\n${compactJson(data)}\n`;\n}\n\nif (action === 'revise_article') {\n  const article = articleFromPayload(data);\n  prompt = `${commonRules}\n\nЗАДАЧА:\nПереработай только фрагменты, прямо указанные в замечаниях.\nНе меняй согласованные части, структуру, факты TEMED и ответы врача без необходимости.\nВерни полный объект статьи после точечной правки.\n\nФОРМАТ:\n{\n  \"article\": {\n    \"name\": \"\",\n    \"code\": \"\",\n    \"seo_title\": \"\",\n    \"meta_description\": \"\",\n    \"preview_text\": \"\",\n    \"short_answer\": \"\",\n    \"detail_html\": \"\",\n    \"sources\": [],\n    \"related_articles\": []\n  },\n  \"changed_sections\": [\n    {\n      \"location\": \"\",\n      \"reason\": \"\",\n      \"before\": \"\",\n      \"after\": \"\"\n    }\n  ],\n  \"unresolved_comments\": [],\n  \"warnings\": []\n}\n\nИСХОДНАЯ СТАТЬЯ:\n${compactJson(article)}\n\nЗАМЕЧАНИЯ:\n${compactJson(data.revision_request ?? data.comments ?? data.validation_report ?? '')}\n\nКОНТЕКСТ:\n${compactJson(data)}\n`;\n}\n\nif (!direct && !prompt && !isDraftAction) {\n  return fail(\n    'ACTION_NOT_IMPLEMENTED',\n    'Для действия не сформирован обработчик.',\n    501\n  );\n}\n\nreturn [{\n  json: {\n    valid: true,\n    success: true,\n    direct,\n    is_draft_action: isDraftAction,\n    action,\n    request_id: requestId,\n    generation_id: generationId,\n    data,\n    prompt,\n    response,\n    http_status: response?.http_status ?? 200\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        144,
-        560
+        -3952,
+        -32
       ],
-      "id": "86502041-1e99-4789-904c-07253c8303c4",
+      "id": "e1181e2e-fcc9-4d0a-991e-1a7d01618d7e",
       "name": "Prepare request"
     },
     {
@@ -64,10 +63,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        384,
-        560
+        -3728,
+        -32
       ],
-      "id": "483a1021-9766-4a91-84af-ba66c5845675",
+      "id": "cb156cc5-a924-4b6c-9abb-509e62e00eb6",
       "name": "IF request valid"
     },
     {
@@ -81,10 +80,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        640,
-        736
+        -3504,
+        -128
       ],
-      "id": "13fd26a3-7dd5-4a83-9239-be7da7acae94",
+      "id": "8bcc4e7c-5f87-4da5-a2ed-996d6b0117e8",
       "name": "Respond request error"
     },
     {
@@ -113,10 +112,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        640,
-        496
+        -2832,
+        112
       ],
-      "id": "4155880c-6361-4379-82ae-b83f07c9e58e",
+      "id": "e933126c-bff0-4dec-a102-25e66bc207a1",
       "name": "IF direct response"
     },
     {
@@ -130,10 +129,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        896,
-        384
+        -1808,
+        -320
       ],
-      "id": "212ed581-e071-44f3-a608-aa9615ba1a74",
+      "id": "b8e0d157-52a4-4484-b2f8-71dc637df5ad",
       "name": "Respond direct"
     },
     {
@@ -155,10 +154,10 @@
       "type": "@n8n/n8n-nodes-langchain.openAi",
       "typeVersion": 1.8,
       "position": [
-        896,
-        592
+        -2608,
+        184
       ],
-      "id": "b5a4a450-6758-4634-bb3e-c64382f951a9",
+      "id": "8dbba4b6-1f80-43ca-abf1-6de44c3f1632",
       "name": "Message a model",
       "credentials": {
         "openAiApi": {
@@ -175,10 +174,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1136,
-        592
+        -2256,
+        184
       ],
-      "id": "6ab6c840-ef38-4195-8f5d-e0b4d9741be4",
+      "id": "e6e8e8fe-8a6a-4097-a1f0-579790fae18a",
       "name": "Parse model JSON"
     },
     {
@@ -207,10 +206,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1376,
-        592
+        -2032,
+        184
       ],
-      "id": "9d15bf69-d048-4dc6-a297-e8a389c1cf23",
+      "id": "8dfc30a5-be4f-4609-b478-31ea6925466d",
       "name": "IF model result valid"
     },
     {
@@ -224,10 +223,10 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1632,
-        512
+        -1808,
+        88
       ],
-      "id": "ce085c32-baac-4a84-bb1b-65fd842eb11b",
+      "id": "40405a66-0db8-4e33-bca6-6513bbac76fc",
       "name": "Respond success"
     },
     {
@@ -241,25 +240,25 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        1632,
-        704
+        -1808,
+        280
       ],
-      "id": "6720b501-56a0-4c54-aeb7-b99d4c48f577",
+      "id": "78e669b5-2202-4059-babe-5601297c9c13",
       "name": "Respond model error"
     },
     {
       "parameters": {
-        "content": "## TEMED SEO Editor v1\n\nОдин защищённый webhook для AI-операций редактора SEO-статей.\n\n### Авторизация webhook\n\nWebhook защищён встроенной авторизацией n8n Header Auth.\n\nCredential:\nX-Temed-Seo-Secret\n\nHTTP-заголовок:\nX-TEMED-SEO-SECRET\n\nЗначение секрета хранится:\n- внутри credential n8n;\n- в закрытом `/internal/seo-editor/config.php` как `n8n_secret`.\n\nСекрет запрещено хранить:\n- в `Prepare request`;\n- в workflow JSON;\n- в GitHub;\n- в теле запроса;\n- в документации.\n\nPHP proxy отправляет секрет в заголовке `X-TEMED-SEO-SECRET`.\n\n### Поддерживаемые действия\n\nСохранить актуальный список действий из workflow.\n\nЗапись в Bitrix остаётся отключённой, если это предусмотрено текущей схемой.",
+        "content": "## TEMED SEO Editor v1\n\nОдин защищённый webhook для AI-операций редактора SEO-статей.\n\n### Авторизация webhook\n\nWebhook защищён встроенной авторизацией n8n Header Auth.\n\nCredential:\nX-Temed-Seo-Secret\n\nHTTP-заголовок:\nX-TEMED-SEO-SECRET\n\nЗначение секрета хранится:\n- внутри credential n8n;\n- в закрытом `/internal/seo-editor/config.php` как `n8n_secret`.\n\nСекрет запрещено хранить:\n- в `Prepare request`;\n- в workflow JSON;\n- в GitHub;\n- в теле запроса;\n- в документации.\n\nPHP proxy отправляет секрет в заголовке `X-TEMED-SEO-SECRET`.\n\n### Поддерживаемые действия\n\nСохранить актуальный список действий из workflow.\n\nЗапись в Bitrix остаётся отключённой, если это предусмотрено текущей схемой.\n\n### Черновики\n\nЧерновики встроены в этот же webhook и этот же workflow.\n\nActions:\n- draft_health\n- draft_get_dictionaries\n- draft_list\n- draft_get\n- draft_create\n- draft_save_version\n- draft_list_versions\n- draft_get_version\n- draft_restore_version\n- draft_delete\n- draft_restore\n- draft_purge\n- draft_log_xml_export\n\nХранилище: Google Sheets\nSpreadsheet ID:\n1DEpgU7rR7IsY0jF-Aarm25sFF4RkqPeEn2jm76DaBto\n\nЛисты:\nЧерновики / Версии / Снимки / Журнал / Справочники\n\nGoogle Apps Script и Google Drive не используются.\n",
         "height": 720,
         "width": 788
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
       "position": [
-        -128,
-        -32
+        -4304,
+        -976
       ],
-      "id": "a5d435d2-07d2-4e33-b862-7be831d0a698",
+      "id": "55b8ac9e-7081-44c6-a6f5-b71a1d11b922",
       "name": "Setup notes"
     },
     {
@@ -288,10 +287,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        640,
-        240
+        -3280,
+        -152
       ],
-      "id": "e5f96184-3173-4f09-825d-4c2b3e2cf5cb",
+      "id": "e02338df-151f-4bff-b370-46db87e38e77",
       "name": "IF start external uniqueness"
     },
     {
@@ -301,10 +300,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        896,
-        128
+        -2832,
+        -488
       ],
-      "id": "4300c808-7dc1-4a83-9346-5b1ff124f73a",
+      "id": "aff0e26a-e83e-40bd-a373-47921f603e66",
       "name": "Prepare TEXT.RU submit"
     },
     {
@@ -314,8 +313,11 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpCustomAuth",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ { text: $json.text, exceptdomain: 'temed.ru, *.temed.ru', copying: 'noadd' } }}",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -327,10 +329,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1136,
-        128
+        -2256,
+        -560
       ],
-      "id": "aae5ff4a-8d8c-4446-a428-9779350dd065",
+      "id": "430209c6-f180-4668-846f-13e32ec7977e",
       "name": "TEXT.RU — Submit text",
       "credentials": {
         "httpCustomAuth": {
@@ -346,10 +348,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1376,
-        128
+        -2032,
+        -560
       ],
-      "id": "65224472-17a9-4a3f-860d-a8731ff389ec",
+      "id": "b982e78b-9631-43e4-a02c-abe663412ee9",
       "name": "Normalize TEXT.RU submit"
     },
     {
@@ -378,10 +380,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        640,
-        496
+        -3056,
+        -32
       ],
-      "id": "70157c21-e5d0-42f3-95d4-fe86ae0da199",
+      "id": "70a2330a-32d0-4034-bd17-35462de7e110",
       "name": "IF get external uniqueness"
     },
     {
@@ -391,10 +393,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        896,
-        384
+        -2832,
+        -248
       ],
-      "id": "8143ca60-7f14-4173-b42d-981883dcd7d0",
+      "id": "d2ce5b95-b59d-49de-8403-2570a58aea1b",
       "name": "Prepare TEXT.RU result request"
     },
     {
@@ -404,8 +406,11 @@
         "authentication": "genericCredentialType",
         "genericAuthType": "httpCustomAuth",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ { uid: $json.text_uid, jsonvisible: 'detail_view' } }}",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -417,10 +422,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1136,
-        384
+        -2256,
+        -176
       ],
-      "id": "60e7137f-8755-4f22-8651-af56d67ce91b",
+      "id": "38463e91-2f19-4368-8fdf-fdb9460e77eb",
       "name": "TEXT.RU — Get result",
       "credentials": {
         "httpCustomAuth": {
@@ -436,10 +441,10 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1376,
-        384
+        -2032,
+        -176
       ],
-      "id": "313bfbd8-fa54-435d-bb6b-f7cc4dce460a",
+      "id": "1e26e0ec-9fa4-48f8-b037-071db22d7a07",
       "name": "Normalize TEXT.RU result"
     },
     {
@@ -468,10 +473,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1016,
-        128
+        -2544,
+        -488
       ],
-      "id": "486214f8-1ad1-4e79-8862-1342ca0f0044",
+      "id": "b51979ca-e00e-48c2-8d5c-0bf1da781956",
       "name": "IF TEXT.RU submit prepared"
     },
     {
@@ -500,10 +505,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1016,
-        384
+        -2544,
+        -248
       ],
-      "id": "a10f3bb6-cedf-460a-8010-0f4dc5898d80",
+      "id": "1cc4ca6b-e5d4-4615-9cdd-df8f3f07af67",
       "name": "IF TEXT.RU result prepared"
     },
     {
@@ -516,7 +521,7 @@
           },
           "conditions": [
             {
-              "id": "draft",
+              "id": "is_draft_action",
               "leftValue": "={{ $json.is_draft_action }}",
               "rightValue": true,
               "operator": {
@@ -532,28 +537,28 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        608,
-        560
+        -3504,
+        64
       ],
-      "id": "84f99ae1-a992-42e6-bf33-3a66c07725c6",
+      "id": "824193d5-7c64-43d9-8882-de1f80300c6c",
       "name": "IF draft action"
     },
     {
       "parameters": {
-        "jsCode": "return $input.all();"
+        "jsCode": "const prepared = $input.first().json;\nconst action = String(prepared.action || '');\nconst data = prepared.data && typeof prepared.data === 'object' ? prepared.data : {};\nconst spreadsheetId = '1DEpgU7rR7IsY0jF-Aarm25sFF4RkqPeEn2jm76DaBto';\n\nconst requiredSheets = ['Черновики', 'Версии', 'Снимки', 'Журнал', 'Справочники'];\nconst rangesByAction = {\n  draft_health: requiredSheets.map(name => `'${name}'!A1:AZ2`),\n  draft_get_dictionaries: [\"'Справочники'!A:AZ\"],\n  draft_list: [\"'Черновики'!A:AZ\"],\n  draft_get: [\"'Черновики'!A:AZ\", \"'Версии'!A:AZ\", \"'Снимки'!A:AZ\"],\n  draft_create: [\"'Черновики'!A:AZ\", \"'Версии'!A1:AZ2\", \"'Снимки'!A1:AZ2\", \"'Журнал'!A1:AZ2\"],\n  draft_save_version: [\"'Черновики'!A:AZ\", \"'Версии'!A1:AZ2\", \"'Снимки'!A1:AZ2\", \"'Журнал'!A1:AZ2\"],\n  draft_list_versions: [\"'Черновики'!A:AZ\", \"'Версии'!A:AZ\"],\n  draft_get_version: [\"'Версии'!A:AZ\", \"'Снимки'!A:AZ\"],\n  draft_restore_version: [\"'Черновики'!A:AZ\", \"'Версии'!A:AZ\", \"'Снимки'!A:AZ\", \"'Журнал'!A:AZ\"],\n  draft_delete: [\"'Черновики'!A:AZ\", \"'Журнал'!A1:AZ2\"],\n  draft_restore: [\"'Черновики'!A:AZ\", \"'Журнал'!A1:AZ2\"],\n  draft_purge: [\"'Черновики'!A:AZ\", \"'Версии'!A:AZ\", \"'Снимки'!A:AZ\", \"'Журнал'!A:AZ\"],\n  draft_log_xml_export: [\"'Черновики'!A:AZ\", \"'Журнал'!A1:AZ2\"]\n};\n\nfunction fail(errorCode, message, httpStatus = 400, details = {}) {\n  return [{\n    json: {\n      success: false,\n      action,\n      request_id: prepared.request_id,\n      error_code: errorCode,\n      message,\n      details,\n      http_status: httpStatus,\n      metadata_url: '',\n      batch_get_url: '',\n      required_sheets: requiredSheets,\n      data\n    }\n  }];\n}\n\nif (!rangesByAction[action]) {\n  return fail('INVALID_ACTION', 'Неизвестное действие черновиков.');\n}\n\nlet payloadSize = 0;\ntry {\n  payloadSize = Buffer.byteLength(JSON.stringify(data), 'utf8');\n} catch (_) {}\n\nif (payloadSize > 5 * 1024 * 1024) {\n  return fail('PAYLOAD_TOO_LARGE', 'Снимок черновика превышает 5 МБ.', 413);\n}\n\nconst user = String(data.user || prepared.user || 'TEMED SEO Editor').slice(0, 200);\nconst query = rangesByAction[action]\n  .map(range => `ranges=${encodeURIComponent(range)}`)\n  .join('&');\n\nreturn [{\n  json: {\n    success: true,\n    action,\n    request_id: prepared.request_id,\n    generation_id: prepared.generation_id,\n    spreadsheet_id: spreadsheetId,\n    required_sheets: requiredSheets,\n    range_names: rangesByAction[action],\n    metadata_url: `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?includeGridData=false&fields=sheets.properties`,\n    batch_get_url: `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values:batchGet?majorDimension=ROWS&${query}`,\n    data: {...data, user},\n    http_status: 200\n  }\n}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        832,
-        288
+        -3280,
+        568
       ],
-      "id": "3ffadf12-70a1-46ef-b670-f225234dbb5f",
+      "id": "5e2c72b2-3b62-412c-925e-f896b86ade77",
       "name": "Prepare draft request"
     },
     {
       "parameters": {
-        "url": "=https://sheets.googleapis.com/v4/spreadsheets/1DEpgU7rR7IsY0jF-Aarm25sFF4RkqPeEn2jm76DaBto?fields=sheets.properties.title",
+        "url": "={{ $json.metadata_url }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "options": {
@@ -567,10 +572,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1056,
-        288
+        -3056,
+        568
       ],
-      "id": "d4746457-1acd-42fa-b9c9-e6d1ff90ab07",
+      "id": "4915645e-b59a-4488-b46c-5a994072a76d",
       "name": "Draft sheets metadata",
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -581,15 +586,15 @@
     },
     {
       "parameters": {
-        "jsCode": "const s=$json.sheets||[]; return [{json:{...$json, draft_sheets_valid:true}}];"
+        "jsCode": "const ctx = $node['Prepare draft request'].json;\nif (ctx.success === false) {\n  return [{json: {...ctx, continue: false, response: ctx}}];\n}\n\nconst raw = $input.first().json;\nconst sheets = Array.isArray(raw.sheets) ? raw.sheets : [];\nconst byTitle = {};\n\nfor (const item of sheets) {\n  const p = item && item.properties ? item.properties : {};\n  if (p.title) {\n    byTitle[String(p.title)] = {\n      sheet_id: Number(p.sheetId),\n      row_count: Number(p.gridProperties?.rowCount || 0),\n      column_count: Number(p.gridProperties?.columnCount || 0)\n    };\n  }\n}\n\nconst missing = ctx.required_sheets.filter(name => !byTitle[name]);\n\nif (missing.length) {\n  const response = {\n    success: false,\n    action: ctx.action,\n    request_id: ctx.request_id,\n    error_code: 'SHEET_NOT_FOUND',\n    message: 'В Google Sheets отсутствуют обязательные листы.',\n    details: {missing_sheets: missing},\n    http_status: 422\n  };\n  return [{json: {...ctx, sheet_meta: byTitle, continue: false, response}}];\n}\n\nreturn [{json: {...ctx, sheet_meta: byTitle, continue: true}}];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1280,
-        288
+        -2832,
+        568
       ],
-      "id": "b4c83e80-1893-4c26-8b02-26e20c71a931",
+      "id": "b08756ed-0514-418f-b185-7bd7e06efb40",
       "name": "Validate draft sheets"
     },
     {
@@ -602,8 +607,8 @@
           },
           "conditions": [
             {
-              "id": "valid",
-              "leftValue": "={{ $json.draft_sheets_valid }}",
+              "id": "draft_sheets_valid",
+              "leftValue": "={{ $json.continue }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -618,15 +623,15 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1504,
-        288
+        -2544,
+        568
       ],
-      "id": "1d4a87be-2efe-47f8-bf1d-6fa990820cfc",
+      "id": "8a7adee6-34b8-4f38-a5ea-eaa41c8711f0",
       "name": "IF draft sheets valid"
     },
     {
       "parameters": {
-        "url": "=https://sheets.googleapis.com/v4/spreadsheets/1DEpgU7rR7IsY0jF-Aarm25sFF4RkqPeEn2jm76DaBto/values:batchGet?ranges='Черновики'!A:AF&ranges='Версии'!A:N&ranges='Снимки'!A:H&ranges='Журнал'!A:G&ranges='Справочники'!A:F",
+        "url": "={{ $json.batch_get_url }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "options": {
@@ -640,10 +645,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        1728,
-        288
+        -2256,
+        640
       ],
-      "id": "1a3cf48a-d92e-467b-abbe-74afa0e39c75",
+      "id": "97cf593f-aa83-4548-84fe-c18d46fa378e",
       "name": "Draft sheets batch get",
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -654,15 +659,15 @@
     },
     {
       "parameters": {
-        "jsCode": "\nconst sheetInput=$input.first().json;\nconst item=$('Prepare request').first().json;\nconst action=item.action; const data=item.data||{}; const request_id=item.request_id;\nconst spreadsheetId='1DEpgU7rR7IsY0jF-Aarm25sFF4RkqPeEn2jm76DaBto';\nconst now=new Date().toISOString();\nfunction ok(data){return [{json:{success:true,action,request_id,data,http_status:200,direct:true}}];}\nfunction err(code,msg,status=400,details={}){return [{json:{success:false,action,request_id,error_code:code,message:msg,details,http_status:status,direct:true}}];}\nfunction headerCode(v){const parts=String(v||'').split(/\\r?\\n/).filter(x=>String(x).trim()!=='');return (parts[parts.length-1]||'').trim();}\nconst ranges=sheetInput.valueRanges||[]; const bySheet={}; for(const r of ranges){const title=String(r.range||'').split('!')[0].replace(/^'|'$/g,''); const values=r.values||[]; const headers=(values[0]||[]).map(headerCode); bySheet[title]={headers, rows:values.slice(1), objects:values.slice(1).map((row,i)=>Object.fromEntries(headers.map((h,idx)=>[h,row[idx]??''])).valueOf())}; bySheet[title].objects.forEach((o,i)=>o.__row=i+2);}\nconst required={\n 'Черновики':['DRAFT_ID','NAME','CODE','STATUS','WORKFLOW_STEP','RESPONSIBLE','RESPONSIBLE_ID','AUTHOR_NAME','AUTHOR_ID','REVIEWER_NAME','REVIEWER_ID','REVIEW_DUE_AT','ARTICLE_TYPE','SEARCH_INTENT','ARTICLE_STRUCTURE','STRUCTURE_VERSION','SECTION','REGION','CURRENT_VERSION','CURRENT_VERSION_ID','LAST_COMMENT','CREATED_AT','CREATED_BY','UPDATED_AT','UPDATED_BY','SNAPSHOT_HASH','SNAPSHOT_SIZE','SNAPSHOT_CHUNKS','SNAPSHOT_ENCODING','IS_DELETED','DELETED_AT','DELETED_BY'],\n 'Версии':['VERSION_ID','DRAFT_ID','VERSION_NUMBER','SAVED_AT','SAVED_BY','SAVE_COMMENT','STATUS','WORKFLOW_STEP','SNAPSHOT_HASH','SNAPSHOT_SIZE','SNAPSHOT_CHUNKS','SNAPSHOT_ENCODING','RESTORED_FROM_VERSION','SAVE_REASON'],\n 'Снимки':['VERSION_ID','DRAFT_ID','CHUNK_INDEX','CHUNK_COUNT','SNAPSHOT_CHUNK','SNAPSHOT_HASH','SNAPSHOT_SIZE','CREATED_AT'],\n 'Журнал':['EVENT_ID','EVENT_AT','USER','ACTION','DRAFT_ID','VERSION_ID','DETAILS'],\n 'Справочники':['TYPE','CODE','NAME','SORT','ACTIVE','DESCRIPTION']};\nconst missing={}; for(const [s,cols] of Object.entries(required)){if(!bySheet[s]) missing[s]=['SHEET_NOT_FOUND']; else {const miss=cols.filter(c=>!bySheet[s].headers.includes(c)); if(miss.length) missing[s]=miss;}}\nif(Object.keys(missing).length) return err('DRAFT_STORAGE_SCHEMA_INVALID','Google Sheets schema is invalid',400,{spreadsheet_id:spreadsheetId,missing_columns:missing});\nfunction sortDesc(a,b,k){return String(b[k]||'').localeCompare(String(a[k]||''));}\nfunction decodeSnapshot(versionId){const chunks=bySheet['Снимки'].objects.filter(x=>x.VERSION_ID===versionId).sort((a,b)=>Number(a.CHUNK_INDEX)-Number(b.CHUNK_INDEX)); if(!chunks.length) throw new Error('SNAPSHOT_INCOMPLETE'); const count=Number(chunks[0].CHUNK_COUNT); if(chunks.length!==count) throw new Error('SNAPSHOT_INCOMPLETE'); const b64=chunks.map(c=>c.SNAPSHOT_CHUNK||'').join(''); const json=Buffer.from(b64,'base64').toString('utf8'); if(Buffer.byteLength(json,'utf8')!==Number(chunks[0].SNAPSHOT_SIZE)) throw new Error('SNAPSHOT_HASH_MISMATCH'); const obj=JSON.parse(json); if(obj.schema_version!=='1.0') throw new Error('SNAPSHOT_UNSUPPORTED_VERSION'); return obj;}\nif(action==='draft_health') return ok({spreadsheet_id:spreadsheetId,sheets:Object.fromEntries(Object.keys(required).map(s=>[s,{columns:bySheet[s].headers.length,rows:bySheet[s].rows.length}])),missing_columns:{}});\nif(action==='draft_get_dictionaries'){const out={status:[],workflow_step:[],save_reason:[],action:[]}; bySheet['Справочники'].objects.filter(r=>['TRUE','true','1','yes','да','активен'].includes(String(r.ACTIVE||'').trim())).sort((a,b)=>Number(a.SORT||0)-Number(b.SORT||0)).forEach(r=>{const t=String(r.TYPE||'').trim(); (out[t]||(out[t]=[])).push({code:r.CODE,name:r.NAME,sort:Number(r.SORT||0),description:r.DESCRIPTION});}); return ok(out);}\nif(action==='draft_list'){let rows=bySheet['Черновики'].objects; const scope=data.scope||'active'; rows=rows.filter(r=>scope==='trash'?String(r.IS_DELETED).toUpperCase()==='TRUE':String(r.IS_DELETED).toUpperCase()!=='TRUE'); if(data.status)rows=rows.filter(r=>r.STATUS===data.status); if(data.workflow_step)rows=rows.filter(r=>r.WORKFLOW_STEP===data.workflow_step); if(data.responsible_id)rows=rows.filter(r=>r.RESPONSIBLE_ID===data.responsible_id); if(data.reviewer_id)rows=rows.filter(r=>r.REVIEWER_ID===data.reviewer_id); if(data.query){const q=String(data.query).toLowerCase(); rows=rows.filter(r=>JSON.stringify(r).toLowerCase().includes(q));} rows.sort((a,b)=>sortDesc(a,b,'UPDATED_AT')); const limit=Math.min(Number(data.limit||50),200), offset=Number(data.offset||0); return ok({items:rows.slice(offset,offset+limit).map(({__row,...r})=>r),total:rows.length,limit,offset});}\nif(action==='draft_get'||action==='draft_get_version'){try{let version,draft; if(action==='draft_get'){draft=bySheet['Черновики'].objects.find(r=>r.DRAFT_ID===data.draft_id&&String(r.IS_DELETED).toUpperCase()!=='TRUE'); if(!draft)return err('DRAFT_NOT_FOUND','Draft not found',404); version=bySheet['Версии'].objects.find(r=>r.VERSION_ID===draft.CURRENT_VERSION_ID);} else {version=bySheet['Версии'].objects.find(r=>r.VERSION_ID===data.version_id); if(!version)return err('VERSION_NOT_FOUND','Version not found',404); draft=bySheet['Черновики'].objects.find(r=>r.DRAFT_ID===version.DRAFT_ID);} if(!version)return err('VERSION_NOT_FOUND','Version not found',404); return ok({draft,version,snapshot:decodeSnapshot(version.VERSION_ID)});}catch(e){return err(String(e.message||'SNAPSHOT_INVALID_JSON'), 'Snapshot integrity check failed',400);}}\nif(action==='draft_list_versions'){const rows=bySheet['Версии'].objects.filter(r=>r.DRAFT_ID===data.draft_id).sort((a,b)=>Number(b.VERSION_NUMBER)-Number(a.VERSION_NUMBER)); return ok({items:rows});}\n// Mutations are planned as Google Sheets RAW writes; no secrets or OAuth tokens are embedded in workflow JSON.\nreturn [{json:{success:true,action,request_id,data:{planned:true,spreadsheet_id:spreadsheetId,message:'Draft mutation plan prepared for Google Sheets RAW writes',action},http_status:200,direct:false,request_1:null,request_2:null,request_3:null,request_4:null}}];\n"
+        "jsCode": "const ctx = $node['Validate draft sheets'].json;\nconst prepared = $node['Prepare request'].json;\nconst action = ctx.action;\nconst data = ctx.data || {};\nconst requestId = ctx.request_id;\nconst spreadsheetId = ctx.spreadsheet_id;\nconst sheetMeta = ctx.sheet_meta || {};\nconst batch = $input.first().json;\n\nfunction responseError(code, message, status = 400, details = {}) {\n  return [{\n    json: {\n      direct: true,\n      requests: [],\n      response: {\n        success: false,\n        action,\n        request_id: requestId,\n        error_code: code,\n        message,\n        details,\n        http_status: status\n      },\n      http_status: status\n    }\n  }];\n}\n\nfunction headerCode(value) {\n  const parts = String(value || '').split(/\\r?\\n/);\n  return parts[parts.length - 1].trim();\n}\n\nfunction titleFromRange(range) {\n  const text = String(range || '');\n  const quoted = text.match(/^'([^']+)'!/);\n  if (quoted) return quoted[1];\n  return text.split('!')[0].replace(/^'|'$/g, '');\n}\n\nfunction parseSheet(valueRange) {\n  const values = Array.isArray(valueRange?.values) ? valueRange.values : [];\n  const headers = (values[0] || []).map(headerCode);\n  const rows = values.slice(1)\n    .map((valuesRow, index) => {\n      const row = {__row_number: index + 2};\n      headers.forEach((code, columnIndex) => {\n        if (code) row[code] = valuesRow[columnIndex] ?? '';\n      });\n      return row;\n    })\n    .filter(row => Object.entries(row).some(([key, value]) => key !== '__row_number' && String(value).trim() !== ''));\n  return {headers, rows};\n}\n\nconst sheets = {};\nfor (const valueRange of (batch.valueRanges || [])) {\n  sheets[titleFromRange(valueRange.range)] = parseSheet(valueRange);\n}\n\nfunction getSheet(name) {\n  return sheets[name] || {headers: [], rows: []};\n}\n\nfunction missingColumns(name, required) {\n  const headers = getSheet(name).headers;\n  return required.filter(code => !headers.includes(code));\n}\n\nconst requiredColumns = {\n  'Черновики': [\n    'DRAFT_ID','NAME','CODE','STATUS','WORKFLOW_STEP','RESPONSIBLE','RESPONSIBLE_ID',\n    'AUTHOR_NAME','AUTHOR_ID','REVIEWER_NAME','REVIEWER_ID','REVIEW_DUE_AT',\n    'ARTICLE_TYPE','SEARCH_INTENT','ARTICLE_STRUCTURE','STRUCTURE_VERSION','SECTION','REGION',\n    'CURRENT_VERSION','CURRENT_VERSION_ID','LAST_COMMENT','CREATED_AT','CREATED_BY',\n    'UPDATED_AT','UPDATED_BY','SNAPSHOT_HASH','SNAPSHOT_SIZE','SNAPSHOT_CHUNKS',\n    'SNAPSHOT_ENCODING','IS_DELETED','DELETED_AT','DELETED_BY'\n  ],\n  'Версии': [\n    'VERSION_ID','DRAFT_ID','VERSION_NUMBER','SAVED_AT','SAVED_BY','SAVE_COMMENT',\n    'STATUS','WORKFLOW_STEP','SNAPSHOT_HASH','SNAPSHOT_SIZE','SNAPSHOT_CHUNKS',\n    'SNAPSHOT_ENCODING','RESTORED_FROM_VERSION','SAVE_REASON'\n  ],\n  'Снимки': [\n    'VERSION_ID','DRAFT_ID','CHUNK_INDEX','CHUNK_COUNT','SNAPSHOT_CHUNK',\n    'SNAPSHOT_HASH','SNAPSHOT_SIZE','CREATED_AT'\n  ],\n  'Журнал': ['EVENT_ID','EVENT_AT','USER','ACTION','DRAFT_ID','VERSION_ID','DETAILS'],\n  'Справочники': ['TYPE','CODE','NAME','SORT','ACTIVE','DESCRIPTION']\n};\n\nconst columnsMissing = {};\nfor (const [name, required] of Object.entries(requiredColumns)) {\n  if (getSheet(name).headers.length) {\n    const missing = missingColumns(name, required);\n    if (missing.length) columnsMissing[name] = missing;\n  }\n}\n\nif (action === 'draft_health') {\n  const missingSheets = ctx.required_sheets.filter(name => !sheetMeta[name]);\n  return [{\n    json: {\n      direct: true,\n      requests: [],\n      response: {\n        success: missingSheets.length === 0 && Object.keys(columnsMissing).length === 0,\n        action,\n        request_id: requestId,\n        data: {\n          spreadsheet_id: spreadsheetId,\n          sheets: Object.fromEntries(ctx.required_sheets.map(name => [name, !!sheetMeta[name]])),\n          missing_columns: columnsMissing,\n          orphan_snapshot_chunks: null,\n          orphan_check: 'not_run_in_health'\n        },\n        ...(missingSheets.length || Object.keys(columnsMissing).length ? {\n          error_code: 'DRAFT_STORAGE_SCHEMA_INVALID',\n          message: 'Структура Google Sheets для черновиков не готова.'\n        } : {}),\n        http_status: missingSheets.length || Object.keys(columnsMissing).length ? 422 : 200\n      },\n      http_status: missingSheets.length || Object.keys(columnsMissing).length ? 422 : 200\n    }\n  }];\n}\n\nconst requiredForAction = {\n  draft_get_dictionaries: ['Справочники'],\n  draft_list: ['Черновики'],\n  draft_get: ['Черновики','Версии','Снимки'],\n  draft_create: ['Черновики','Версии','Снимки','Журнал'],\n  draft_save_version: ['Черновики','Версии','Снимки','Журнал'],\n  draft_list_versions: ['Черновики','Версии'],\n  draft_get_version: ['Версии','Снимки'],\n  draft_restore_version: ['Черновики','Версии','Снимки','Журнал'],\n  draft_delete: ['Черновики','Журнал'],\n  draft_restore: ['Черновики','Журнал'],\n  draft_purge: ['Черновики','Версии','Снимки','Журнал'],\n  draft_log_xml_export: ['Черновики','Журнал']\n}[action] || [];\n\nfor (const sheetName of requiredForAction) {\n  if (columnsMissing[sheetName]?.length) {\n    return responseError(\n      'COLUMN_NOT_FOUND',\n      `На листе «${sheetName}» отсутствуют обязательные колонки.`,\n      422,\n      {sheet: sheetName, missing_columns: columnsMissing[sheetName]}\n    );\n  }\n}\n\nfunction bool(value) {\n  const normalized = String(value ?? '').trim().toLowerCase();\n  return ['1','true','yes','y','да'].includes(normalized);\n}\n\nfunction number(value, fallback = 0) {\n  const result = Number(String(value ?? '').replace(',', '.'));\n  return Number.isFinite(result) ? result : fallback;\n}\n\nfunction uuid(prefix) {\n  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 8)}`;\n}\n\nfunction now() {\n  return new Date().toISOString();\n}\n\nfunction stableValue(value) {\n  if (Array.isArray(value)) return value.map(stableValue);\n  if (value && typeof value === 'object') {\n    return Object.keys(value).sort().reduce((result, key) => {\n      const item = value[key];\n      if (item !== undefined && typeof item !== 'function') result[key] = stableValue(item);\n      return result;\n    }, {});\n  }\n  return value;\n}\n\nfunction sha256(ascii) {\n  function rightRotate(value, amount) {\n    return (value >>> amount) | (value << (32 - amount));\n  }\n  const mathPow = Math.pow;\n  const maxWord = mathPow(2, 32);\n  const lengthProperty = 'length';\n  let i, j;\n  let result = '';\n  const words = [];\n  const asciiBitLength = ascii[lengthProperty] * 8;\n  const hash = sha256.h = sha256.h || [];\n  const k = sha256.k = sha256.k || [];\n  let primeCounter = k[lengthProperty];\n  const isComposite = {};\n  for (let candidate = 2; primeCounter < 64; candidate++) {\n    if (!isComposite[candidate]) {\n      for (i = 0; i < 313; i += candidate) isComposite[i] = candidate;\n      hash[primeCounter] = (mathPow(candidate, .5) * maxWord) | 0;\n      k[primeCounter++] = (mathPow(candidate, 1 / 3) * maxWord) | 0;\n    }\n  }\n  ascii = unescape(encodeURIComponent(ascii));\n  ascii += '\\x80';\n  while (ascii[lengthProperty] % 64 - 56) ascii += '\\x00';\n  for (i = 0; i < ascii[lengthProperty]; i++) {\n    j = ascii.charCodeAt(i);\n    words[i >> 2] |= j << ((3 - i) % 4) * 8;\n  }\n  words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);\n  words[words[lengthProperty]] = (asciiBitLength);\n  for (j = 0; j < words[lengthProperty];) {\n    const w = words.slice(j, j += 16);\n    const oldHash = hash.slice(0);\n    for (i = 0; i < 64; i++) {\n      const i2 = i + j;\n      let w15 = w[i - 15], w2 = w[i - 2];\n      const a = hash[0], e = hash[4];\n      const temp1 = hash[7]\n        + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))\n        + ((e & hash[5]) ^ ((~e) & hash[6]))\n        + k[i]\n        + (w[i] = i < 16 ? w[i] : (\n          w[i - 16]\n          + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))\n          + w[i - 7]\n          + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))\n        ) | 0);\n      const temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))\n        + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));\n      hash.pop();\n      hash.unshift((temp1 + temp2) | 0);\n      hash[4] = (hash[4] + temp1) | 0;\n    }\n    for (i = 0; i < 8; i++) hash[i] = (hash[i] + oldHash[i]) | 0;\n  }\n  for (i = 0; i < 8; i++) {\n    for (j = 3; j + 1; j--) {\n      const b = (hash[i] >> (j * 8)) & 255;\n      result += ((b < 16) ? '0' : '') + b.toString(16);\n    }\n  }\n  return result;\n}\n\nfunction snapshotPackage(snapshot) {\n  if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) {\n    throw new Error('SNAPSHOT_REQUIRED');\n  }\n  const normalized = stableValue(snapshot);\n  if (!normalized.schema_version) normalized.schema_version = '1.0';\n  const json = JSON.stringify(normalized);\n  const size = Buffer.byteLength(json, 'utf8');\n  if (size > 5 * 1024 * 1024) throw new Error('PAYLOAD_TOO_LARGE');\n  const hash = sha256(json);\n  const base64 = Buffer.from(json, 'utf8').toString('base64');\n  const chunks = [];\n  for (let offset = 0; offset < base64.length; offset += 40000) {\n    chunks.push(base64.slice(offset, offset + 40000));\n  }\n  return {json, size, hash, chunks, encoding: 'base64-utf8-v1'};\n}\n\nfunction reconstruct(versionId) {\n  const version = getSheet('Версии').rows.find(row => String(row.VERSION_ID || '') === String(versionId));\n  if (!version) throw new Error('VERSION_NOT_FOUND');\n  const chunks = getSheet('Снимки').rows\n    .filter(row => String(row.VERSION_ID || '') === String(versionId))\n    .sort((a, b) => number(a.CHUNK_INDEX) - number(b.CHUNK_INDEX));\n  const expected = number(version.SNAPSHOT_CHUNKS, number(chunks[0]?.CHUNK_COUNT));\n  if (!expected || chunks.length !== expected) throw new Error('SNAPSHOT_INCOMPLETE');\n  const seen = new Set();\n  for (let index = 1; index <= expected; index++) {\n    const row = chunks[index - 1];\n    const actual = number(row.CHUNK_INDEX);\n    if (actual !== index || seen.has(actual)) throw new Error('SNAPSHOT_INCOMPLETE');\n    seen.add(actual);\n  }\n  const base64 = chunks.map(row => String(row.SNAPSHOT_CHUNK || '')).join('');\n  let json;\n  try {\n    json = Buffer.from(base64, 'base64').toString('utf8');\n  } catch (_) {\n    throw new Error('SNAPSHOT_INVALID_JSON');\n  }\n  const expectedSize = number(version.SNAPSHOT_SIZE, number(chunks[0]?.SNAPSHOT_SIZE));\n  if (expectedSize && Buffer.byteLength(json, 'utf8') !== expectedSize) throw new Error('SNAPSHOT_INCOMPLETE');\n  const expectedHash = String(version.SNAPSHOT_HASH || chunks[0]?.SNAPSHOT_HASH || '');\n  if (!expectedHash || sha256(json) !== expectedHash) throw new Error('SNAPSHOT_HASH_MISMATCH');\n  let snapshot;\n  try {\n    snapshot = JSON.parse(json);\n  } catch (_) {\n    throw new Error('SNAPSHOT_INVALID_JSON');\n  }\n  if (!['1.0'].includes(String(snapshot.schema_version || '1.0'))) {\n    throw new Error('SNAPSHOT_UNSUPPORTED_VERSION');\n  }\n  return {version, snapshot};\n}\n\nfunction errorFromException(error) {\n  const code = String(error?.message || error);\n  const map = {\n    SNAPSHOT_REQUIRED: ['INVALID_REQUEST', 'Не передан снимок редактора.', 422],\n    PAYLOAD_TOO_LARGE: ['PAYLOAD_TOO_LARGE', 'Снимок черновика превышает 5 МБ.', 413],\n    VERSION_NOT_FOUND: ['VERSION_NOT_FOUND', 'Версия черновика не найдена.', 404],\n    SNAPSHOT_INCOMPLETE: ['SNAPSHOT_INCOMPLETE', 'Снимок версии сохранён не полностью.', 500],\n    SNAPSHOT_HASH_MISMATCH: ['SNAPSHOT_HASH_MISMATCH', 'Контрольная сумма снимка не совпала.', 500],\n    SNAPSHOT_INVALID_JSON: ['SNAPSHOT_INVALID_JSON', 'Снимок версии повреждён.', 500],\n    SNAPSHOT_UNSUPPORTED_VERSION: ['SNAPSHOT_UNSUPPORTED_VERSION', 'Версия формата снимка не поддерживается.', 422]\n  };\n  return map[code] || ['INVALID_REQUEST', code, 422];\n}\n\nfunction colLetter(index) {\n  let result = '';\n  let n = index;\n  while (n > 0) {\n    n--;\n    result = String.fromCharCode(65 + (n % 26)) + result;\n    n = Math.floor(n / 26);\n  }\n  return result;\n}\n\nfunction rowValues(sheetName, object) {\n  const headers = getSheet(sheetName).headers;\n  return headers.map(code => {\n    const value = object[code];\n    if (value === undefined || value === null) return '';\n    if (typeof value === 'object') return JSON.stringify(value);\n    return value;\n  });\n}\n\nfunction appendRequest(sheetName, objects) {\n  const rows = objects.map(object => rowValues(sheetName, object));\n  return {\n    method: 'POST',\n    url: `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${sheetName}'!A1`)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,\n    body: {majorDimension: 'ROWS', values: rows}\n  };\n}\n\nfunction updateRowRequest(sheetName, rowNumber, object) {\n  const headers = getSheet(sheetName).headers;\n  const last = colLetter(headers.length);\n  return {\n    method: 'PUT',\n    url: `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodeURIComponent(`'${sheetName}'!A${rowNumber}:${last}${rowNumber}`)}?valueInputOption=RAW`,\n    body: {majorDimension: 'ROWS', values: [rowValues(sheetName, object)]}\n  };\n}\n\nfunction journal(actionName, draftId = '', versionId = '', details = {}) {\n  return {\n    EVENT_ID: uuid('event'),\n    EVENT_AT: now(),\n    USER: String(data.user || 'TEMED SEO Editor'),\n    ACTION: actionName,\n    DRAFT_ID: draftId,\n    VERSION_ID: versionId,\n    DETAILS: JSON.stringify(details)\n  };\n}\n\nfunction draftById(id) {\n  return getSheet('Черновики').rows.find(row => String(row.DRAFT_ID || '') === String(id));\n}\n\nfunction versionMetadata(version) {\n  const copy = {...version};\n  delete copy.__row_number;\n  return copy;\n}\n\nfunction draftMetadata(draft) {\n  const copy = {...draft};\n  delete copy.__row_number;\n  return copy;\n}\n\nif (action === 'draft_get_dictionaries') {\n  const grouped = {};\n  const rows = getSheet('Справочники').rows\n    .filter(row => bool(row.ACTIVE))\n    .sort((a, b) => number(a.SORT, 500) - number(b.SORT, 500));\n  for (const row of rows) {\n    const type = String(row.TYPE || '').trim();\n    if (!type) continue;\n    if (!grouped[type]) grouped[type] = [];\n    grouped[type].push({\n      code: String(row.CODE || ''),\n      name: String(row.NAME || ''),\n      sort: number(row.SORT, 500),\n      description: String(row.DESCRIPTION || '')\n    });\n  }\n  return [{json: {direct: true, requests: [], response: {success: true, action, request_id: requestId, data: grouped, http_status: 200}, http_status: 200}}];\n}\n\nif (action === 'draft_list') {\n  const query = String(data.query || '').trim().toLowerCase();\n  const scope = String(data.scope || 'active');\n  const limit = Math.min(Math.max(number(data.limit, 50), 1), 200);\n  const offset = Math.max(number(data.offset, 0), 0);\n  let rows = getSheet('Черновики').rows.filter(row => {\n    const deleted = bool(row.IS_DELETED);\n    const archived = String(row.STATUS || '') === 'archived';\n    if (scope === 'trash' && !deleted) return false;\n    if (scope === 'archived' && (deleted || !archived)) return false;\n    if (scope === 'active' && (deleted || archived)) return false;\n    if (data.status && String(row.STATUS || '') !== String(data.status)) return false;\n    if (data.workflow_step && String(row.WORKFLOW_STEP || '') !== String(data.workflow_step)) return false;\n    if (data.responsible_id && String(row.RESPONSIBLE_ID || '') !== String(data.responsible_id)) return false;\n    if (data.reviewer_id && String(row.REVIEWER_ID || '') !== String(data.reviewer_id)) return false;\n    if (query) {\n      const haystack = [row.NAME,row.CODE,row.RESPONSIBLE,row.REVIEWER_NAME,row.LAST_COMMENT]\n        .map(value => String(value || '').toLowerCase()).join(' ');\n      if (!haystack.includes(query)) return false;\n    }\n    return true;\n  });\n  rows.sort((a, b) => String(b.UPDATED_AT || '').localeCompare(String(a.UPDATED_AT || '')));\n  const total = rows.length;\n  rows = rows.slice(offset, offset + limit).map(draftMetadata);\n  return [{json: {direct: true, requests: [], response: {success: true, action, request_id: requestId, data: {items: rows,total,limit,offset}, http_status: 200}, http_status: 200}}];\n}\n\nif (action === 'draft_get') {\n  const draft = draftById(data.draft_id);\n  if (!draft) return responseError('DRAFT_NOT_FOUND', 'Черновик не найден.', 404);\n  try {\n    const loaded = reconstruct(String(draft.CURRENT_VERSION_ID || ''));\n    return [{json: {direct: true, requests: [], response: {success: true, action, request_id: requestId, data: {draft: draftMetadata(draft), version: versionMetadata(loaded.version), snapshot: loaded.snapshot}, http_status: 200}, http_status: 200}}];\n  } catch (error) {\n    const [code, message, status] = errorFromException(error);\n    return responseError(code, message, status);\n  }\n}\n\nif (action === 'draft_list_versions') {\n  const draft = draftById(data.draft_id);\n  if (!draft) return responseError('DRAFT_NOT_FOUND', 'Черновик не найден.', 404);\n  const items = getSheet('Версии').rows\n    .filter(row => String(row.DRAFT_ID || '') === String(data.draft_id))\n    .sort((a, b) => number(b.VERSION_NUMBER) - number(a.VERSION_NUMBER))\n    .map(versionMetadata);\n  return [{json: {direct: true, requests: [], response: {success: true, action, request_id: requestId, data: {draft: draftMetadata(draft), items}, http_status: 200}, http_status: 200}}];\n}\n\nif (action === 'draft_get_version') {\n  try {\n    const loaded = reconstruct(String(data.version_id || ''));\n    return [{json: {direct: true, requests: [], response: {success: true, action, request_id: requestId, data: {version: versionMetadata(loaded.version), snapshot: loaded.snapshot}, http_status: 200}, http_status: 200}}];\n  } catch (error) {\n    const [code, message, status] = errorFromException(error);\n    return responseError(code, message, status);\n  }\n}\n\nif (action === 'draft_create' || action === 'draft_save_version' || action === 'draft_restore_version') {\n  let draft = action === 'draft_create' ? null : draftById(data.draft_id);\n  if (action !== 'draft_create' && !draft) return responseError('DRAFT_NOT_FOUND', 'Черновик не найден.', 404);\n  if (action !== 'draft_create') {\n    const expected = number(data.expected_current_version, -1);\n    const actual = number(draft.CURRENT_VERSION, 0);\n    if (expected !== actual) {\n      return responseError('VERSION_CONFLICT', 'Черновик уже был изменён в другой вкладке.', 409, {expected, actual});\n    }\n  }\n\n  let snapshot = data.snapshot;\n  let restoredFrom = '';\n  if (action === 'draft_restore_version') {\n    try {\n      const loaded = reconstruct(String(data.version_id || ''));\n      snapshot = loaded.snapshot;\n      restoredFrom = String(loaded.version.VERSION_ID || '');\n    } catch (error) {\n      const [code, message, status] = errorFromException(error);\n      return responseError(code, message, status);\n    }\n  }\n\n  let pkg;\n  try {\n    pkg = snapshotPackage(snapshot);\n  } catch (error) {\n    const [code, message, status] = errorFromException(error);\n    return responseError(code, message, status);\n  }\n\n  const timestamp = now();\n  const user = String(data.user || 'TEMED SEO Editor');\n  const draftId = draft ? String(draft.DRAFT_ID) : uuid('draft');\n  const versionId = uuid('version');\n  const versionNumber = draft ? number(draft.CURRENT_VERSION, 0) + 1 : 1;\n  const metadata = data.metadata && typeof data.metadata === 'object' ? data.metadata : {};\n  const status = String(metadata.status ?? draft?.STATUS ?? 'draft');\n  const workflowStep = String(metadata.workflow_step ?? draft?.WORKFLOW_STEP ?? '');\n  const comment = String(metadata.save_comment ?? data.save_comment ?? '');\n  const saveReason = String(metadata.save_reason ?? data.save_reason ?? (action === 'draft_restore_version' ? 'restored_version' : 'manual'));\n\n  const snapshotRows = pkg.chunks.map((chunk, index) => ({\n    VERSION_ID: versionId,\n    DRAFT_ID: draftId,\n    CHUNK_INDEX: index + 1,\n    CHUNK_COUNT: pkg.chunks.length,\n    SNAPSHOT_CHUNK: chunk,\n    SNAPSHOT_HASH: pkg.hash,\n    SNAPSHOT_SIZE: pkg.size,\n    CREATED_AT: timestamp\n  }));\n\n  const versionRow = {\n    VERSION_ID: versionId,\n    DRAFT_ID: draftId,\n    VERSION_NUMBER: versionNumber,\n    SAVED_AT: timestamp,\n    SAVED_BY: user,\n    SAVE_COMMENT: comment,\n    STATUS: status,\n    WORKFLOW_STEP: workflowStep,\n    SNAPSHOT_HASH: pkg.hash,\n    SNAPSHOT_SIZE: pkg.size,\n    SNAPSHOT_CHUNKS: pkg.chunks.length,\n    SNAPSHOT_ENCODING: pkg.encoding,\n    RESTORED_FROM_VERSION: restoredFrom,\n    SAVE_REASON: saveReason\n  };\n\n  const mergedDraft = {\n    ...(draft || {}),\n    DRAFT_ID: draftId,\n    NAME: String(metadata.name ?? draft?.NAME ?? snapshot?.article?.name ?? snapshot?.fields?.result_name ?? 'Без названия'),\n    CODE: String(metadata.code ?? draft?.CODE ?? snapshot?.article?.code ?? snapshot?.fields?.result_code ?? ''),\n    STATUS: status,\n    WORKFLOW_STEP: workflowStep,\n    RESPONSIBLE: String(metadata.responsible ?? draft?.RESPONSIBLE ?? ''),\n    RESPONSIBLE_ID: String(metadata.responsible_id ?? draft?.RESPONSIBLE_ID ?? ''),\n    AUTHOR_NAME: String(metadata.author_name ?? draft?.AUTHOR_NAME ?? ''),\n    AUTHOR_ID: String(metadata.author_id ?? draft?.AUTHOR_ID ?? ''),\n    REVIEWER_NAME: String(metadata.reviewer_name ?? draft?.REVIEWER_NAME ?? ''),\n    REVIEWER_ID: String(metadata.reviewer_id ?? draft?.REVIEWER_ID ?? ''),\n    REVIEW_DUE_AT: String(metadata.review_due_at ?? draft?.REVIEW_DUE_AT ?? ''),\n    ARTICLE_TYPE: String(metadata.article_type ?? draft?.ARTICLE_TYPE ?? ''),\n    SEARCH_INTENT: String(metadata.search_intent ?? draft?.SEARCH_INTENT ?? ''),\n    ARTICLE_STRUCTURE: String(metadata.article_structure ?? draft?.ARTICLE_STRUCTURE ?? ''),\n    STRUCTURE_VERSION: String(metadata.structure_version ?? draft?.STRUCTURE_VERSION ?? ''),\n    SECTION: String(metadata.section ?? draft?.SECTION ?? ''),\n    REGION: String(metadata.region ?? draft?.REGION ?? ''),\n    CURRENT_VERSION: versionNumber,\n    CURRENT_VERSION_ID: versionId,\n    LAST_COMMENT: comment,\n    CREATED_AT: draft?.CREATED_AT || timestamp,\n    CREATED_BY: draft?.CREATED_BY || user,\n    UPDATED_AT: timestamp,\n    UPDATED_BY: user,\n    SNAPSHOT_HASH: pkg.hash,\n    SNAPSHOT_SIZE: pkg.size,\n    SNAPSHOT_CHUNKS: pkg.chunks.length,\n    SNAPSHOT_ENCODING: pkg.encoding,\n    IS_DELETED: false,\n    DELETED_AT: '',\n    DELETED_BY: ''\n  };\n  delete mergedDraft.__row_number;\n\n  const requests = [\n    appendRequest('Снимки', snapshotRows),\n    appendRequest('Версии', [versionRow]),\n    draft ? updateRowRequest('Черновики', draft.__row_number, mergedDraft) : appendRequest('Черновики', [mergedDraft]),\n    appendRequest('Журнал', [journal(\n      action === 'draft_create' ? 'draft_created' : action === 'draft_restore_version' ? 'draft_version_restored' : 'draft_saved',\n      draftId,\n      versionId,\n      {version_number: versionNumber, save_reason: saveReason, comment}\n    )])\n  ];\n\n  return [{\n    json: {\n      direct: false,\n      requests,\n      response: {\n        success: true,\n        action,\n        request_id: requestId,\n        data: {\n          draft_id: draftId,\n          version_id: versionId,\n          version_number: versionNumber,\n          snapshot_hash: pkg.hash,\n          snapshot_size: pkg.size,\n          snapshot_chunks: pkg.chunks.length\n        },\n        http_status: action === 'draft_create' ? 201 : 200\n      },\n      http_status: action === 'draft_create' ? 201 : 200\n    }\n  }];\n}\n\nif (action === 'draft_delete' || action === 'draft_restore') {\n  const draft = draftById(data.draft_id);\n  if (!draft) return responseError('DRAFT_NOT_FOUND', 'Черновик не найден.', 404);\n  const timestamp = now();\n  const user = String(data.user || 'TEMED SEO Editor');\n  const updated = {...draft};\n  delete updated.__row_number;\n  if (action === 'draft_delete') {\n    updated.IS_DELETED = true;\n    updated.DELETED_AT = timestamp;\n    updated.DELETED_BY = user;\n  } else {\n    updated.IS_DELETED = false;\n    updated.DELETED_AT = '';\n    updated.DELETED_BY = '';\n  }\n  updated.UPDATED_AT = timestamp;\n  updated.UPDATED_BY = user;\n\n  const requests = [\n    updateRowRequest('Черновики', draft.__row_number, updated),\n    appendRequest('Журнал', [journal(action === 'draft_delete' ? 'draft_deleted' : 'draft_restored', String(draft.DRAFT_ID), String(draft.CURRENT_VERSION_ID || ''), {})])\n  ];\n  return [{json: {direct: false, requests, response: {success: true, action, request_id: requestId, data: {draft_id: draft.DRAFT_ID}, http_status: 200}, http_status: 200}}];\n}\n\nif (action === 'draft_purge') {\n  const draft = draftById(data.draft_id);\n  if (!draft) return responseError('DRAFT_NOT_FOUND', 'Черновик не найден.', 404);\n  if (!bool(draft.IS_DELETED)) return responseError('INVALID_REQUEST', 'Окончательно удалить можно только черновик из корзины.', 422);\n  if (String(data.confirm_name || '') !== String(draft.NAME || '')) {\n    return responseError('INVALID_REQUEST', 'Название для подтверждения не совпадает.', 422);\n  }\n\n  function deleteRequestsForRows(sheetName, rowNumbers) {\n    const sheetId = sheetMeta[sheetName]?.sheet_id;\n    return [...rowNumbers]\n      .sort((a, b) => b - a)\n      .map(rowNumber => ({\n        deleteDimension: {\n          range: {\n            sheetId,\n            dimension: 'ROWS',\n            startIndex: rowNumber - 1,\n            endIndex: rowNumber\n          }\n        }\n      }));\n  }\n\n  const draftId = String(draft.DRAFT_ID);\n  const deleteRequests = [\n    ...deleteRequestsForRows('Снимки', getSheet('Снимки').rows.filter(row => String(row.DRAFT_ID || '') === draftId).map(row => row.__row_number)),\n    ...deleteRequestsForRows('Версии', getSheet('Версии').rows.filter(row => String(row.DRAFT_ID || '') === draftId).map(row => row.__row_number)),\n    ...deleteRequestsForRows('Черновики', [draft.__row_number])\n  ];\n\n  const requests = [\n    {\n      method: 'POST',\n      url: `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`,\n      body: {requests: deleteRequests}\n    },\n    appendRequest('Журнал', [journal('draft_purged', draftId, String(draft.CURRENT_VERSION_ID || ''), {name: String(draft.NAME || '')})])\n  ];\n\n  return [{json: {direct: false, requests, response: {success: true, action, request_id: requestId, data: {draft_id: draftId, purged: true}, http_status: 200}, http_status: 200}}];\n}\n\nif (action === 'draft_log_xml_export') {\n  const draft = draftById(data.draft_id);\n  if (!draft) return responseError('DRAFT_NOT_FOUND', 'Черновик не найден.', 404);\n  const requests = [\n    appendRequest('Журнал', [journal('xml_exported', String(draft.DRAFT_ID), String(draft.CURRENT_VERSION_ID || ''), {\n      filename: String(data.filename || ''),\n      code: String(draft.CODE || '')\n    })])\n  ];\n  return [{json: {direct: false, requests, response: {success: true, action, request_id: requestId, data: {logged: true}, http_status: 200}, http_status: 200}}];\n}\n\nreturn responseError('INVALID_ACTION', 'Действие черновиков не реализовано.', 501);"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1952,
-        288
+        -2032,
+        640
       ],
-      "id": "de3f1c08-346a-4766-b1d5-77fcb62d9c0f",
+      "id": "47ef9f34-cf9c-47cc-8420-87c34491cf4f",
       "name": "Build draft plan"
     },
     {
@@ -675,7 +680,7 @@
           },
           "conditions": [
             {
-              "id": "direct",
+              "id": "draft_direct",
               "leftValue": "={{ $json.direct }}",
               "rightValue": true,
               "operator": {
@@ -691,27 +696,27 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2176,
-        288
+        -1808,
+        640
       ],
-      "id": "6174c8a4-a47d-4301-a31a-31c684d5b09d",
+      "id": "f2c818e5-be6b-4595-8282-cc27d989b282",
       "name": "IF draft direct"
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ $json }}",
+        "responseBody": "={{ $json.response || $json }}",
         "options": {
-          "responseCode": "={{ $json.http_status || 200 }}"
+          "responseCode": "={{ $json.response?.http_status || $json.http_status || 200 }}"
         }
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        2400,
-        192
+        -1584,
+        472
       ],
-      "id": "adc3f549-ea9d-4340-a14f-9a1c43b3dab5",
+      "id": "08a77b23-2848-42fe-86db-c9ca557eefa8",
       "name": "Respond draft direct"
     },
     {
@@ -724,8 +729,8 @@
           },
           "conditions": [
             {
-              "id": "r1",
-              "leftValue": "={{ !!$json.request_1 }}",
+              "id": "draft_request_1",
+              "leftValue": "={{ $node['Build draft plan'].json.requests[0] !== undefined }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -740,21 +745,24 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2400,
-        384
+        -1584,
+        688
       ],
-      "id": "a97d2ed8-ac11-454e-8079-73cf9a395fdc",
+      "id": "39bae61e-8733-49ee-8a70-3f9caf1990ed",
       "name": "IF draft request 1"
     },
     {
       "parameters": {
-        "method": "={{ $json.request_1.method || \"POST\" }}",
-        "url": "={{ $json.request_1.url }}",
+        "method": "={{ $node['Build draft plan'].json.requests[0].method }}",
+        "url": "={{ $node['Build draft plan'].json.requests[0].url }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ $json.request_1.body }}",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -766,10 +774,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        2624,
-        304
+        -1360,
+        616
       ],
-      "id": "dbc92da8-7863-4ebb-b5dd-d4d7b9bf2e33",
+      "id": "3ff838c1-aa16-4de3-bfd6-72d83dbbe759",
       "name": "Draft Sheets request 1",
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -788,8 +796,8 @@
           },
           "conditions": [
             {
-              "id": "r2",
-              "leftValue": "={{ !!$json.request_2 }}",
+              "id": "draft_request_2",
+              "leftValue": "={{ $node['Build draft plan'].json.requests[1] !== undefined }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -804,21 +812,24 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        2848,
-        384
+        -1136,
+        688
       ],
-      "id": "ab22fa58-9eb7-42cf-9931-41d0e557d652",
+      "id": "e4ba5153-a39b-4ad6-8997-57ee90704ee5",
       "name": "IF draft request 2"
     },
     {
       "parameters": {
-        "method": "={{ $json.request_2.method || \"POST\" }}",
-        "url": "={{ $json.request_2.url }}",
+        "method": "={{ $node['Build draft plan'].json.requests[1].method }}",
+        "url": "={{ $node['Build draft plan'].json.requests[1].url }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ $json.request_2.body }}",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -830,10 +841,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3072,
-        304
+        -912,
+        616
       ],
-      "id": "e0b9f3ab-cb3f-4958-99aa-3a1b46cf2616",
+      "id": "870512c7-ac14-461e-93c8-e10f8f4716fd",
       "name": "Draft Sheets request 2",
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -852,8 +863,8 @@
           },
           "conditions": [
             {
-              "id": "r3",
-              "leftValue": "={{ !!$json.request_3 }}",
+              "id": "draft_request_3",
+              "leftValue": "={{ $node['Build draft plan'].json.requests[2] !== undefined }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -868,21 +879,24 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3296,
-        384
+        -688,
+        688
       ],
-      "id": "23d1d2e5-5351-4cbe-9869-9a39e6e6bcf4",
+      "id": "5dab9160-71b3-4db2-9383-45a57c718968",
       "name": "IF draft request 3"
     },
     {
       "parameters": {
-        "method": "={{ $json.request_3.method || \"POST\" }}",
-        "url": "={{ $json.request_3.url }}",
+        "method": "={{ $node['Build draft plan'].json.requests[2].method }}",
+        "url": "={{ $node['Build draft plan'].json.requests[2].url }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ $json.request_3.body }}",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -894,10 +908,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3520,
-        304
+        -464,
+        616
       ],
-      "id": "5e531c0d-bc0e-4e75-a22e-dd241cddc019",
+      "id": "15e7c7b6-b8bc-4f29-9a2a-6a2888042b91",
       "name": "Draft Sheets request 3",
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -916,8 +930,8 @@
           },
           "conditions": [
             {
-              "id": "r4",
-              "leftValue": "={{ !!$json.request_4 }}",
+              "id": "draft_request_4",
+              "leftValue": "={{ $node['Build draft plan'].json.requests[3] !== undefined }}",
               "rightValue": true,
               "operator": {
                 "type": "boolean",
@@ -932,21 +946,24 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        3744,
-        384
+        -240,
+        688
       ],
-      "id": "bf115c0a-989b-4810-85d6-38590f1cc836",
+      "id": "3d144239-b50c-43b1-878a-7d1b705812d2",
       "name": "IF draft request 4"
     },
     {
       "parameters": {
-        "method": "={{ $json.request_4.method || \"POST\" }}",
-        "url": "={{ $json.request_4.url }}",
+        "method": "={{ $node['Build draft plan'].json.requests[3].method }}",
+        "url": "={{ $node['Build draft plan'].json.requests[3].url }}",
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "googleSheetsOAuth2Api",
         "sendBody": true,
-        "contentType": "json",
-        "jsonBody": "={{ $json.request_4.body }}",
+        "bodyParameters": {
+          "parameters": [
+            {}
+          ]
+        },
         "options": {
           "response": {
             "response": {
@@ -958,10 +975,10 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        3968,
-        304
+        -16,
+        616
       ],
-      "id": "6ecd8193-1082-42b9-b9cf-32c986e2b184",
+      "id": "dcb26f59-9d42-4e8c-8544-5ba8db2d3d7b",
       "name": "Draft Sheets request 4",
       "credentials": {
         "googleSheetsOAuth2Api": {
@@ -973,22 +990,36 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ $json.response || $json }}",
+        "responseBody": "={{ $node['Build draft plan'].json.response }}",
         "options": {
-          "responseCode": "={{ $json.http_status || 200 }}"
+          "responseCode": "={{ $node['Build draft plan'].json.response.http_status || 200 }}"
         }
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.4,
       "position": [
-        4192,
-        384
+        208,
+        688
       ],
-      "id": "f4fecb77-7fbd-4237-9ad7-39c2ee9833c7",
+      "id": "d89ddf1f-e081-418b-89af-063d70d3f0d1",
       "name": "Respond draft mutation"
+    },
+    {
+      "parameters": {
+        "content": "## Черновики в существующем workflow\n\nОдин webhook и один Header Auth.\n\nGoogle Sheets API вызывается через существующий credential:\nGoogle Sheets [ n8n.temed ]\n\nSpreadsheet ID:\n1DEpgU7rR7IsY0jF-Aarm25sFF4RkqPeEn2jm76DaBto\n\nGoogle Drive и Apps Script не используются.\n\nПеред активацией создать лист «Снимки» и привести заголовки к схеме из ТЗ.",
+        "height": 420,
+        "width": 720
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -3280,
+        816
+      ],
+      "id": "fbf47c32-32dd-4384-8374-f79a904a43ae",
+      "name": "Draft setup notes"
     }
   ],
-  "pinData": {},
   "connections": {
     "Webhook": {
       "main": [
@@ -1452,14 +1483,9 @@
       ]
     }
   },
-  "active": true,
-  "settings": {
-    "executionOrder": "v1"
-  },
-  "versionId": "bccedff4-5772-4642-9d2b-72cd4d582731",
+  "pinData": {},
   "meta": {
+    "templateCredsSetupCompleted": true,
     "instanceId": "0ac9a1d8e7b09fb0f504f7d90e7ec36636be03ea59af94bfa8326a51562dd3c5"
-  },
-  "id": "8Cif7ZuMYMFITNVE",
-  "tags": []
+  }
 }
