@@ -5,4 +5,7 @@ return [
     'temed_seo_api_token' => 'CHANGE_ME',
     'n8n_base_url' => 'https://n8n.example.ru/webhook/example',
     'n8n_secret' => 'CHANGE_ME',
+    'drafts_web_app_url' => '',
+    'drafts_shared_secret' => '',
+    'editor_user_name' => 'TEMED SEO Editor',
 ];

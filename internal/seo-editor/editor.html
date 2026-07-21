@@ -52,11 +52,17 @@
 
   <!-- ================= MAIN ================= -->
   <div class="main">
+    <nav class="workspace-tabs" aria-label="Разделы редактора">
+      <button type="button" class="workspace-tab on" data-workspace="editor">Редактор</button>
+      <button type="button" class="workspace-tab" data-workspace="drafts">Черновики</button>
+    </nav>
     <div class="topbar">
       <span class="tname" id="topTaskName">Новая задача</span>
       <button type="button" class="themebtn" id="themeBtn" title="Переключить тему">☾</button>
       <span class="badge mode" id="topMode">Новая статья</span>
       <span class="badge draft" id="topStructBadge">структура не выбрана</span>
+      <span class="badge draft" id="topDraftBadge">Черновик не сохранён</span>
+      <button type="button" class="btn primary compact" data-action="open_draft_save_modal">Сохранить черновик</button>
     </div>
 
     <form id="articleForm" class="content" onsubmit="return false">
@@ -662,6 +668,26 @@
       <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><span></span></div>
     </section>
     </form>
+
+    <section id="draftsWorkspace" class="drafts-workspace is-hidden" aria-label="Черновики">
+      <div class="step-head">
+        <h2>Черновики</h2>
+        <p>Реестр версий хранится в Google Sheets, полные JSON-снимки — в Google Drive через защищённый PHP-прокси.</p>
+      </div>
+      <div class="card drafts-toolbar">
+        <div class="field"><label for="draft_search">Поиск</label><input id="draft_search" type="search" placeholder="Название, код или комментарий"></div>
+        <div class="field"><label for="draft_status_filter">Статус</label><select id="draft_status_filter"><option value="">Все статусы</option></select></div>
+        <div class="field"><label for="draft_workflow_filter">Этап</label><select id="draft_workflow_filter"><option value="">Все этапы</option></select></div>
+        <div class="field"><label for="draft_responsible_filter">Ответственный</label><select id="draft_responsible_filter"><option value="">Все ответственные</option></select></div>
+        <div class="field"><label for="draft_reviewer_filter">Проверяющий врач</label><select id="draft_reviewer_filter"><option value="">Все врачи</option></select></div>
+        <div class="field"><label for="draft_scope_filter">Показать</label><select id="draft_scope_filter"><option value="active">Активные</option><option value="archived">Архив</option><option value="trash">Корзина</option></select></div>
+        <div class="btnrow drafts-toolbar-actions"><button type="button" class="btn primary" data-action="refresh_drafts">Обновить</button><button type="button" class="btn" data-workspace-switch="editor">Вернуться в редактор</button></div>
+      </div>
+      <div id="draftsStatus" class="api-info">Нажмите «Обновить», чтобы загрузить список черновиков.</div>
+      <div id="draftsList" class="drafts-list"></div>
+      <div id="draftVersions" class="draft-versions is-hidden"></div>
+    </section>
+
   </div>
 </div>
   <aside class="assistant-panel" id="assistant_panel" data-testid="assistant-panel" aria-label="ИИ-ассистент">
@@ -676,6 +702,20 @@
       <div class="assistant-compose"><textarea id="assistant_input" rows="3" placeholder="Задайте вопрос"></textarea><button type="button" class="btn primary" id="assistant_send">Отправить</button></div>
     </div>
   </aside>
+
+
+  <div id="draft_save_modal" class="draft-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="draft_save_title">
+    <div class="draft-modal-box">
+      <h2 id="draft_save_title">Сохранить черновик</h2>
+      <div class="row2"><div class="field"><label for="draft_save_name">Название</label><input id="draft_save_name" type="text"></div><div class="field"><label for="draft_save_status">Статус</label><select id="draft_save_status"></select></div></div>
+      <div class="row2"><div class="field"><label for="draft_save_workflow">Этап работы</label><select id="draft_save_workflow"></select></div><div class="field"><label for="draft_save_responsible">Ответственный</label><select id="draft_save_responsible"></select></div></div>
+      <div class="row2"><div class="field"><label for="draft_save_reviewer">Проверяющий врач</label><select id="draft_save_reviewer"></select></div><div class="field"><label for="draft_save_due">Срок медицинской редакции</label><input id="draft_save_due" type="date"></div></div>
+      <div class="field"><label for="draft_save_comment">Комментарий к версии</label><textarea id="draft_save_comment" rows="3"></textarea></div>
+      <div class="field"><label for="draft_save_reason">Причина сохранения</label><select id="draft_save_reason"></select></div>
+      <div id="draftSaveWarning" class="callout warn is-hidden"></div>
+      <div class="btnrow"><button type="button" class="btn primary" id="draft_save_submit">Сохранить новую версию</button><button type="button" class="btn ghost" id="draft_save_cancel">Отмена</button></div>
+    </div>
+  </div>
 
   <div id="layout_preview_modal" class="layout-preview-modal is-hidden" role="dialog" aria-modal="true" aria-labelledby="layout_preview_title">
     <div class="layout-preview-shell">

@@ -1250,6 +1250,8 @@ document.querySelectorAll('[data-action]').forEach(button=>{
     const action=button.dataset.action;
 
     try{
+      if(action==='open_draft_save_modal'){await openDraftSaveModal();return;}
+      if(action==='refresh_drafts'){await refreshDrafts();return;}
       if(action==='build_brief'){buildBrief();return;}
       if(action==='search_context'){searchRelatedArticles();return;}
       if(action==='build_external_task'){buildExternalTask();return;}
@@ -1651,3 +1653,111 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!document.getElemen
 document.getElementById('assistant_clear')?.addEventListener('click',()=>{APP_STATE.assistant.messages=[];sessionStorage.removeItem('temed_assistant_'+(fieldValue('generation_id')||'draft'));document.getElementById('assistant_messages').textContent='';});
 document.getElementById('assistant_mode')?.querySelectorAll('button').forEach(btn=>btn.addEventListener('click',()=>{document.getElementById('assistant_mode').querySelectorAll('button').forEach(b=>b.classList.remove('on'));btn.classList.add('on');APP_STATE.assistant.mode=btn.dataset.mode||'article';}));
 (async()=>{const saved=readExternalUniquenessState();if(!saved)return;if(isActiveExternalStatus(saved.status)&&!hasExternalUid(saved)){removeBrokenExternalState(saved);return;}if(!saved.status||!saved.content_hash||!hasExternalUid(saved)){sessionStorage.removeItem('temed_external_uniqueness');return;}const currentHash=await calculateExternalUniquenessHash();if(saved.content_hash!==currentHash){APP_STATE.uniqueness.external={...saved,status:'outdated'};sessionStorage.removeItem('temed_external_uniqueness');renderExternalUniqueness();return;}APP_STATE.uniqueness.external={...saved,text_uid:saved.text_uid.trim()};renderExternalUniqueness();if(isActiveExternalStatus(APP_STATE.uniqueness.external.status))scheduleExternalUniquenessPoll();})();
+
+/* ===== Google Sheets / Drive drafts ===== */
+const DRAFT_FORBIDDEN_FIELDS = new Set([
+  'password','password_hash','cookie','csrf','session','php_session','secret','n8n_secret',
+  'api_key','credentials','temed_seo_api_token','text_uid','config.php'
+]);
+const DRAFT_FIELD_IDS = Array.from(document.querySelectorAll('#articleForm input[id], #articleForm textarea[id], #articleForm select[id]'))
+  .map(el=>el.id)
+  .filter(id=>id && !DRAFT_FORBIDDEN_FIELDS.has(id) && id !== 'action_log');
+const DRAFT_REQUIRED_COMMENT_REASONS = new Set(['before_medical_review','after_medical_review','needs_revision','restored_version']);
+APP_STATE.draft = APP_STATE.draft || {draft_id:'',version_id:'',version_number:0,saved_hash:'',loaded_at:'',status:'',is_dirty:false};
+APP_STATE.draftDictionaries = APP_STATE.draftDictionaries || {statuses:[],workflow_steps:[],save_reasons:[],raw:[]};
+APP_STATE.drafts = APP_STATE.drafts || {items:[],offset:0,limit:50};
+
+function stableStringify(value){
+  if(value === undefined) return undefined;
+  if(value === null || typeof value !== 'object') return JSON.stringify(value);
+  if(Array.isArray(value)) return '[' + value.map(item => stableStringify(item) ?? 'null').join(',') + ']';
+  return '{' + Object.keys(value).sort().map(key => {
+    const item = stableStringify(value[key]);
+    return item === undefined ? '' : JSON.stringify(key) + ':' + item;
+  }).filter(Boolean).join(',') + '}';
+}
+async function draftSha256(value){return browserHash(typeof value === 'string' ? value : stableStringify(value));}
+function assertNoForbiddenDraftFields(obj,path=''){
+  if(!obj || typeof obj !== 'object') return;
+  Object.keys(obj).forEach(key=>{
+    const lower=key.toLowerCase();
+    if(DRAFT_FORBIDDEN_FIELDS.has(lower)) throw new Error('Запрещённое поле в снимке: '+(path?path+'.':'')+key);
+    assertNoForbiddenDraftFields(obj[key],(path?path+'.':'')+key);
+  });
+}
+function collectDraftSnapshot(){
+  const fields={};
+  DRAFT_FIELD_IDS.forEach(id=>{fields[id]=fieldValue(id);});
+  const editor_state={
+    current_step:cur,
+    fields,
+    workflow:buildBrief().workflow,
+    search_task:buildBrief().search_task,
+    placement:buildBrief().placement,
+    medical_roles:buildBrief().medical_roles,
+    internal_context:buildBrief().internal_context,
+    sources:buildBrief().sources,
+    instructions:buildBrief().instructions,
+    generated_outline:fieldValue('generated_outline'),
+    article:currentArticleObject(),
+    medical_review:{questions:fieldValue('med_questions'),answers:fieldValue('med_answers')},
+    validation:{report:fieldValue('validation_report'),revision_request:fieldValue('revision_request')},
+    layout:{notes:fieldValue('layout_notes'),task:fieldValue('layout_task'),external_result:fieldValue('external_layout_result'),state:{...APP_STATE.layout,preview_opener:null}},
+    uniqueness:{internal:APP_STATE.uniqueness.internal,external:APP_STATE.uniqueness.external && APP_STATE.uniqueness.external.status === 'completed' ? {...APP_STATE.uniqueness.external,text_uid:undefined} : null},
+    theme:localStorage.getItem('temed_seo_theme') || ''
+  };
+  assertNoForbiddenDraftFields(editor_state);
+  return {schema_version:'1.0',draft_id:APP_STATE.draft.draft_id||'',version_id:APP_STATE.draft.version_id||'',version_number:APP_STATE.draft.version_number||0,saved_at:'',saved_by:'',save_comment:'',status:APP_STATE.draft.status||'',workflow_step:'',editor_state};
+}
+async function collectDraftPayload(){const snapshot=collectDraftSnapshot();snapshot.snapshot_hash=await draftSha256(snapshot.editor_state);return snapshot;}
+function applyDraftSnapshot(snapshot){
+  if(!snapshot || snapshot.schema_version !== '1.0' || !snapshot.editor_state) throw new Error('Некорректный формат снимка черновика.');
+  const state=snapshot.editor_state;
+  assertNoForbiddenDraftFields(state);
+  Object.entries(state.fields||{}).forEach(([id,value])=>{if(DRAFT_FIELD_IDS.includes(id)) setFieldValue(id,value);});
+  if(state.article) setArticleResult(state.article);
+  APP_STATE.layout={...APP_STATE.layout,...(state.layout?.state||{}),preview_opener:null};
+  APP_STATE.uniqueness.internal=state.uniqueness?.internal||null;
+  APP_STATE.uniqueness.external=state.uniqueness?.external && state.uniqueness.external.status === 'completed' ? state.uniqueness.external : null;
+  stopExternalUniquenessPoll(); sessionStorage.removeItem('temed_external_uniqueness'); renderInternalUniqueness(); renderExternalUniqueness();
+  if(state.search_task?.search_intent){document.getElementById('search_intent').value=state.search_task.search_intent;renderStructs(state.search_task.search_intent);}
+  if(state.search_task?.article_structure) selectStruct(state.search_task.article_structure);
+  goto(Math.max(0,Math.min(13,Number(state.current_step||0))));
+  document.getElementById('topTaskName').textContent=fieldValue('task_name')||fieldValue('result_name')||'Новая задача';
+  logAction('Загружен снимок черновика',{draft_id:snapshot.draft_id||'',version_id:snapshot.version_id||'',version_number:snapshot.version_number||0});
+}
+function draftOptionLabel(item){return item.label || item.name || item.title || item.value || item.code || ''}
+function dictionaryByType(type){return (APP_STATE.draftDictionaries.raw||[]).filter(item=>String(item.type||item.TYPE||'').toLowerCase()===type)}
+function fillSelect(select,items,placeholder){if(!select)return;const current=select.value;select.innerHTML='<option value="">'+escapeHtml(placeholder||'—')+'</option>';items.forEach(item=>{const o=document.createElement('option');o.value=String(item.code||item.CODE||item.value||item.VALUE||item.id||item.ID||'');o.textContent=draftOptionLabel(item)||o.value;select.appendChild(o);});if([...select.options].some(o=>o.value===current))select.value=current;}
+function fillDoctorSelect(select,placeholder){if(!select)return;const current=select.value;select.innerHTML='<option value="">'+escapeHtml(placeholder||'—')+'</option>';APP_DATA.doctors.forEach(d=>{const o=document.createElement('option');o.value=String(d.id);o.textContent=d.name||String(d.id);select.appendChild(o);});if([...select.options].some(o=>o.value===current))select.value=current;}
+async function callDraftsApi(action,data={}){
+  const response=await fetch('drafts.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action,data})});
+  const text=await response.text();let payload;try{payload=JSON.parse(text);}catch(_){throw new Error('Сервер черновиков вернул некорректный JSON.');}
+  if(response.status===401){window.location.reload();throw new Error('Сессия редактора завершена.');}
+  if(!response.ok || payload.success!==true){const e=new Error(payload.message||payload.error||('Ошибка HTTP '+response.status));e.payload=payload;e.status=response.status;throw e;}
+  return payload.data||{};
+}
+async function loadDraftDictionaries(){try{const data=await callDraftsApi('get_dictionaries',{});APP_STATE.draftDictionaries.raw=data.items||data.dictionaries||[];}catch(e){logAction('Справочники черновиков недоступны',{error:String(e.message||e)});}fillSelect(document.getElementById('draft_status_filter'),dictionaryByType('status'),'Все статусы');fillSelect(document.getElementById('draft_workflow_filter'),dictionaryByType('workflow_step'),'Все этапы');fillSelect(document.getElementById('draft_save_status'),dictionaryByType('status'),'Выберите статус');fillSelect(document.getElementById('draft_save_workflow'),dictionaryByType('workflow_step'),'Выберите этап');fillSelect(document.getElementById('draft_save_reason'),dictionaryByType('save_reason'),'manual');fillDoctorSelect(document.getElementById('draft_responsible_filter'),'Все ответственные');fillDoctorSelect(document.getElementById('draft_reviewer_filter'),'Все врачи');fillDoctorSelect(document.getElementById('draft_save_responsible'),'Выберите ответственного');fillDoctorSelect(document.getElementById('draft_save_reviewer'),'Выберите врача');}
+function setWorkspace(name){document.body.dataset.workspace=name;document.querySelectorAll('.workspace-tab').forEach(b=>b.classList.toggle('on',b.dataset.workspace===name));document.getElementById('draftsWorkspace')?.classList.toggle('is-hidden',name!=='drafts');if(name==='drafts') refreshDrafts();}
+function updateDraftBadge(){const b=document.getElementById('topDraftBadge');if(!b)return;b.textContent=APP_STATE.draft.draft_id ? ('Черновик v'+APP_STATE.draft.version_number+(APP_STATE.draft.is_dirty?' · есть несохранённые изменения':'')) : (APP_STATE.draft.is_dirty?'Новый черновик · есть несохранённые изменения':'Черновик не сохранён');}
+async function markDraftDirty(){if(window.__draftApplying)return;APP_STATE.draft.is_dirty=true;updateDraftBadge();}
+function draftDueClass(date){if(!date)return '';const today=new Date();today.setHours(0,0,0,0);const d=new Date(date+'T00:00:00');const diff=(d-today)/86400000;if(diff<0)return 'due-overdue';if(diff<=1)return 'due-soon';return '';}
+function renderDrafts(items){const box=document.getElementById('draftsList');box.textContent='';if(!items.length){box.innerHTML='<div class="card">Черновики не найдены.</div>';return;}items.forEach(d=>{const card=document.createElement('div');card.className='draft-card'+(APP_STATE.draft.draft_id===d.DRAFT_ID&&APP_STATE.draft.is_dirty?' is-dirty':'');card.innerHTML='<div class="draft-card-head"><div><h3>'+escapeHtml(d.NAME||'Без названия')+'</h3><div class="hint mono">'+escapeHtml(d.CODE||d.DRAFT_ID||'')+'</div></div><div class="badge draft">v'+escapeHtml(d.CURRENT_VERSION||'0')+'</div></div><div class="draft-meta"><div><b>Статус</b>'+escapeHtml(d.STATUS||'—')+'</div><div><b>Этап</b>'+escapeHtml(d.WORKFLOW_STEP||'—')+'</div><div><b>Ответственный</b>'+escapeHtml(d.RESPONSIBLE||'—')+'</div><div><b>Автор</b>'+escapeHtml(d.AUTHOR_NAME||'—')+'</div><div><b>Врач</b>'+escapeHtml(d.REVIEWER_NAME||'—')+'</div><div><b>Срок</b><span class="'+draftDueClass(d.REVIEW_DUE_AT)+'">'+escapeHtml(d.REVIEW_DUE_AT||'—')+'</span></div><div><b>Изменён</b>'+escapeHtml(d.UPDATED_AT||'—')+'</div><div><b>Кто изменил</b>'+escapeHtml(d.UPDATED_BY||'—')+'</div></div><div class="hint">'+escapeHtml(d.LAST_COMMENT||'')+'</div><div class="draft-actions"></div>';const actions=card.querySelector('.draft-actions');[['Открыть','open'],['История','versions'],['Сохранить новую версию','save'],['Удалить','delete']].forEach(([label,act])=>{if((d.IS_DELETED==='TRUE'||d.IS_DELETED===true)&&act==='delete')return;const btn=document.createElement('button');btn.type='button';btn.className=act==='open'?'btn primary':'btn';btn.textContent=label;btn.addEventListener('click',()=>handleDraftCardAction(act,d));actions.appendChild(btn);});if(d.IS_DELETED==='TRUE'||d.IS_DELETED===true){['restore','purge'].forEach(act=>{const btn=document.createElement('button');btn.type='button';btn.className=act==='purge'?'btn ghost':'btn primary';btn.textContent=act==='restore'?'Восстановить':'Удалить окончательно';btn.addEventListener('click',()=>handleDraftCardAction(act,d));actions.appendChild(btn);});}box.appendChild(card);});}
+async function refreshDrafts(){const status=document.getElementById('draftsStatus');status.textContent='Загрузка черновиков…';try{const data=await callDraftsApi('list_drafts',{query:fieldValue('draft_search'),status:fieldValue('draft_status_filter'),workflow_step:fieldValue('draft_workflow_filter'),responsible_id:fieldValue('draft_responsible_filter'),reviewer_id:fieldValue('draft_reviewer_filter'),scope:fieldValue('draft_scope_filter')||'active',limit:50,offset:0});APP_STATE.drafts.items=data.items||[];renderDrafts(APP_STATE.drafts.items);status.textContent='Загружено: '+APP_STATE.drafts.items.length;}catch(e){status.textContent='Ошибка: '+String(e.message||e);}}
+async function ensureSafeToOpen(){const h=await draftSha256(collectDraftSnapshot().editor_state);const dirty=APP_STATE.draft.is_dirty || (APP_STATE.draft.saved_hash && APP_STATE.draft.saved_hash!==h);if(!dirty)return true;const save=confirm('В текущей статье есть несохранённые изменения.\n\nОК — сохранить новую версию перед загрузкой другого черновика.\nОтмена — выбрать следующий вариант.');if(save){await openDraftSaveModal();return false;}return confirm('Открыть другой черновик без сохранения текущих изменений?');}
+async function openDraft(d){if(!(await ensureSafeToOpen()))return;const data=await callDraftsApi('get_draft',{draft_id:d.DRAFT_ID});window.__draftApplying=true;try{applyDraftSnapshot(data.snapshot);const hash=await draftSha256(data.snapshot.editor_state);APP_STATE.draft={draft_id:data.draft.DRAFT_ID,version_id:data.snapshot.version_id||'',version_number:Number(data.draft.CURRENT_VERSION||data.snapshot.version_number||0),saved_hash:data.draft.SNAPSHOT_HASH||hash,loaded_at:new Date().toISOString(),status:data.draft.STATUS||'',is_dirty:false};updateDraftBadge();setWorkspace('editor');}finally{window.__draftApplying=false;}}
+async function openDraftSaveModal(){await loadDraftDictionaries();document.getElementById('draft_save_name').value=fieldValue('result_name')||fieldValue('task_name')||'';document.getElementById('draft_save_due').value='';document.getElementById('draft_save_comment').value='';document.getElementById('draft_save_modal').classList.remove('is-hidden');document.getElementById('draft_save_cancel').focus();}
+function closeDraftSaveModal(){document.getElementById('draft_save_modal').classList.add('is-hidden');}
+function selectedDoctorName(id){return (APP_DATA.doctors.find(d=>String(d.id)===String(id))||{}).name||'';}
+async function saveDraftVersion(){const reason=fieldValue('draft_save_reason')||'manual';const comment=fieldValue('draft_save_comment').trim();if(DRAFT_REQUIRED_COMMENT_REASONS.has(reason)&&!comment){alert('Для выбранной причины комментарий обязателен.');return;}if(fieldValue('draft_save_status')==='waiting_medical_review'&&!fieldValue('draft_save_due'))document.getElementById('draftSaveWarning').textContent='Срок медицинской редакции не указан — сохранение не заблокировано.';const snapshot=await collectDraftPayload();const meta={name:fieldValue('draft_save_name')||fieldValue('result_name')||fieldValue('task_name')||'Без названия',code:fieldValue('result_code'),status:fieldValue('draft_save_status'),workflow_step:fieldValue('draft_save_workflow')||String(cur),responsible_id:fieldValue('draft_save_responsible'),responsible:selectedDoctorName(fieldValue('draft_save_responsible')),reviewer_id:fieldValue('draft_save_reviewer')||fieldValue('medical_reviewer_id'),reviewer_name:selectedDoctorName(fieldValue('draft_save_reviewer')||fieldValue('medical_reviewer_id')),review_due_at:fieldValue('draft_save_due'),comment,save_reason:reason,author_id:fieldValue('author_id'),author_name:selectedDoctorName(fieldValue('author_id')),article_type:fieldValue('article_type'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),structure_version:fieldValue('article_structure_version'),section:fieldValue('article_section'),region:fieldValue('region')};const action=APP_STATE.draft.draft_id?'save_draft_version':'create_draft';const data=await callDraftsApi(action,{draft_id:APP_STATE.draft.draft_id,expected_current_version:APP_STATE.draft.version_number,meta,snapshot});APP_STATE.draft={draft_id:data.draft_id,version_id:data.version_id,version_number:Number(data.version_number),saved_hash:data.snapshot_hash||snapshot.snapshot_hash,loaded_at:new Date().toISOString(),status:meta.status,is_dirty:false};updateDraftBadge();closeDraftSaveModal();logAction('Черновик сохранён',{draft_id:data.draft_id,version:data.version_number});alert('Черновик сохранён: версия '+data.version_number);}
+async function renderVersions(d){const data=await callDraftsApi('list_versions',{draft_id:d.DRAFT_ID});const box=document.getElementById('draftVersions');box.classList.remove('is-hidden');box.innerHTML='<div class="card"><h3>История версий: '+escapeHtml(d.NAME||'')+'</h3></div>';const inner=box.querySelector('.card');(data.items||[]).forEach(v=>{const row=document.createElement('div');row.className='version-row';row.innerHTML='<b>v'+escapeHtml(v.VERSION_NUMBER)+'</b><div>'+escapeHtml(v.SAVED_AT||'')+' · '+escapeHtml(v.SAVED_BY||'')+'<br><span class="hint">'+escapeHtml(v.SAVE_COMMENT||'')+'</span></div><div class="version-actions"></div>';const a=row.querySelector('.version-actions');[['Открыть без восстановления','open_version'],['Восстановить как новую версию','restore_version']].forEach(([label,act])=>{const btn=document.createElement('button');btn.type='button';btn.className=act==='restore_version'?'btn primary':'btn';btn.textContent=label;btn.addEventListener('click',()=>handleVersionAction(act,d,v));a.appendChild(btn);});inner.appendChild(row);});box.scrollIntoView({behavior:'smooth',block:'start'});}
+async function handleVersionAction(act,d,v){if(act==='open_version'){if(!(await ensureSafeToOpen()))return;const data=await callDraftsApi('get_version',{draft_id:d.DRAFT_ID,version_id:v.VERSION_ID});window.__draftApplying=true;try{applyDraftSnapshot(data.snapshot);APP_STATE.draft={draft_id:d.DRAFT_ID,version_id:v.VERSION_ID,version_number:Number(v.VERSION_NUMBER),saved_hash:'',loaded_at:new Date().toISOString(),status:v.STATUS||'',is_dirty:true};updateDraftBadge();setWorkspace('editor');}finally{window.__draftApplying=false;}}else{if(!confirm('Восстановить версию v'+v.VERSION_NUMBER+' как новую текущую версию?'))return;const data=await callDraftsApi('restore_version',{draft_id:d.DRAFT_ID,version_id:v.VERSION_ID,expected_current_version:Number(d.CURRENT_VERSION||0)});alert('Создана новая версия v'+data.version_number);refreshDrafts();renderVersions(d);}}
+async function handleDraftCardAction(act,d){if(act==='open')return openDraft(d);if(act==='versions')return renderVersions(d);if(act==='save')return openDraftSaveModal();if(act==='delete'){if(confirm('Черновик будет перемещён в корзину.\nВсе версии сохранятся.')){await callDraftsApi('delete_draft',{draft_id:d.DRAFT_ID});refreshDrafts();}}if(act==='restore'){await callDraftsApi('restore_draft',{draft_id:d.DRAFT_ID});refreshDrafts();}if(act==='purge'){const typed=prompt('Будут удалены реестр черновика и все файлы версий.\nОтменить это действие будет нельзя.\n\nВведите название черновика для подтверждения.');if(typed===d.NAME){await callDraftsApi('purge_draft',{draft_id:d.DRAFT_ID,confirm_name:typed});refreshDrafts();}else if(typed!==null)alert('Название не совпадает.');}}
+
+document.querySelectorAll('.workspace-tab').forEach(btn=>btn.addEventListener('click',()=>setWorkspace(btn.dataset.workspace||'editor')));
+document.querySelectorAll('[data-workspace-switch]').forEach(btn=>btn.addEventListener('click',()=>setWorkspace(btn.dataset.workspaceSwitch||'editor')));
+document.getElementById('draft_save_cancel')?.addEventListener('click',closeDraftSaveModal);
+document.getElementById('draft_save_submit')?.addEventListener('click',()=>saveDraftVersion().catch(e=>alert(String(e.message||e))));
+['draft_search','draft_status_filter','draft_workflow_filter','draft_responsible_filter','draft_reviewer_filter','draft_scope_filter'].forEach(id=>document.getElementById(id)?.addEventListener('change',refreshDrafts));
+document.getElementById('draft_search')?.addEventListener('keydown',e=>{if(e.key==='Enter')refreshDrafts();});
+form?.addEventListener('input',markDraftDirty,true);form?.addEventListener('change',markDraftDirty,true);updateDraftBadge();loadDraftDictionaries();
