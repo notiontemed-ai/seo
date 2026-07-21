@@ -232,17 +232,15 @@ if ($cssVersion === '' || $jsVersion === '') {
     exit('Файлы интерфейса редактора недоступны.');
 }
 
-$html = str_replace(
-    [
-        '__EDITOR_CSS_VERSION__',
-        '__EDITOR_JS_VERSION__',
-    ],
-    [
-        htmlspecialchars($cssVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-        htmlspecialchars($jsVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-    ],
-    $html
-);
+$cssVersion = htmlspecialchars($cssVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+$jsVersion = htmlspecialchars($jsVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+$html = preg_replace('~(assets/css/editor\.css\?v=)[^"\']*~', '${1}' . $cssVersion, $html);
+$html = preg_replace('~(assets/js/editor\.js\?v=)[^"\']*~', '${1}' . $jsVersion, $html);
+
+if (strpos($html, '__EDITOR_') !== false) {
+    error_log('TEMED SEO Editor: asset version placeholder was not replaced in editor.html.');
+}
 
 $logout = <<<'HTML'
 <a
