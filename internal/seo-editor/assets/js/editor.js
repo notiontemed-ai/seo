@@ -1127,7 +1127,7 @@ async function runGenerateArticle(button){
   }
 
   document.getElementById('side_status').textContent='статья сгенерирована';
-  goto(9);
+  goto(5);
 }
 
 async function runExtractMedQuestions(button){
@@ -1159,7 +1159,7 @@ async function runApplyMedAnswers(button){
   const items=(Array.isArray(data.warnings)?data.warnings:[]).map(w=>({raw:w,severity:'warning'}));
   renderResultReport('med_report_cards',buildResultReport('Готово: ответы врача внесены в текст.',items));
   document.getElementById('side_status').textContent='ответы врача применены';
-  goto(9);
+  goto(5);
 }
 
 async function runValidateArticle(button){
@@ -1200,7 +1200,7 @@ async function runReviseArticle(button){
   const data=await callN8n('revise_article',actionPayload(),button);
   setArticleResult(data.article||data);
   document.getElementById('side_status').textContent='правки внесены';
-  goto(9);
+  goto(5);
 }
 
 async function refreshDictionaries(button){
@@ -1309,7 +1309,7 @@ async function loadExistingArticle(button){
     });
 
     document.getElementById('side_status').textContent='статья загружена';
-    goto(9);
+    goto(5);
   }catch(error){
     alert('Не удалось загрузить статью:\n\n'+String(error.message||error));
   }finally{
@@ -1611,7 +1611,7 @@ function buildExternalTask(){
     lines.push(JSON.stringify(raw,null,2));
   }else{
     lines.push('## Структура не выбрана');
-    lines.push('Вернитесь на шаг «Поисковая задача» и выберите структуру статьи.');
+    lines.push('Вернитесь на шаг «Задача» и выберите структуру статьи.');
   }
 
   lines.push('');
@@ -1652,7 +1652,7 @@ function loadExternalText(){
   document.getElementById('result_detail_html').value=t;
   document.getElementById('side_status').textContent='текст загружен (внешний ассистент)';
   logAction('Текст внешнего ассистента загружен в результат',{chars:t.length});
-  goto(9);
+  goto(5);
 }
 
 /* ---- шаблоны вёрстки ---- */
@@ -1804,7 +1804,7 @@ const WARNING_CATALOG=[
   {code:'AVAILABLE_FORMS_EMPTY',pattern:/available_forms\s*(пуст|отсутств|нет|empty)|формы записи не/i,severity:'warning',
     title:'Формы записи не подключены',
     consequence:'На странице не будет кнопок записи на приём — страница не приведёт заявки.',
-    action:'Выберите формы на шаге вёрстки или подтвердите, что страница информационная.'},
+    action:'Выберите формы на шаге «Вёрстка и выпуск» или подтвердите, что страница информационная.'},
   /* --- info: FAQ микроданными --- */
   {code:'FAQ_MICRODATA_FALLBACK',pattern:/faqpage.*(микроданн|microdata)|микроданн.*faq|faq.*вместо json-?ld/i,severity:'info',
     title:'FAQ размечен допустимым запасным способом',
@@ -2068,7 +2068,7 @@ function formatXmlMissingFieldsMessage(missingFields){const labels=missingFields
 function xmlFieldElement(code){if(code==='author_id')return document.getElementById('author_search')||document.getElementById('author_id');if(code==='medical_reviewer_id')return document.getElementById('medical_reviewer_search')||document.getElementById('medical_reviewer_id');if(code==='section'&&fieldValue('article_section_id')==='__new__')return document.getElementById('new_article_section')||document.getElementById('article_section_id');return document.getElementById(XML_FIELD_TARGETS[code]||code);}
 function clearXmlFieldErrors(){document.querySelectorAll('.xml-field-error').forEach(el=>el.classList.remove('xml-field-error'));}
 function markXmlFieldError(code){if(XML_SEARCH_TASK_FIELDS.has(code)){document.getElementById(code==='search_intent'?'intentCards':'structCards')?.classList.add('xml-field-error');return;}const el=xmlFieldElement(code);if(!el)return;el.classList.add('xml-field-error');}
-function focusFirstXmlFieldError(missingFields){const first=missingFields[0];if(!first)return;if(XML_SEARCH_TASK_FIELDS.has(first)){goto(1);setTimeout(()=>{const target=document.getElementById(first==='search_intent'?'intentCards':'structCards');target?.scrollIntoView({behavior:'smooth',block:'center'});target?.querySelector('button:not(:disabled)')?.focus({preventScroll:true});},80);return;}const el=xmlFieldElement(first);const step=el?.closest('.step');if(step)goto(Number(step.dataset.step));setTimeout(()=>{el?.scrollIntoView({behavior:'smooth',block:'center'});if(el&&/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(el.tagName)&&el.type!=='hidden')el.focus({preventScroll:true});},80);}
+function focusFirstXmlFieldError(missingFields){const first=missingFields[0];if(!first)return;if(XML_SEARCH_TASK_FIELDS.has(first)){goto(0);setTimeout(()=>{const target=document.getElementById(first==='search_intent'?'intentCards':'structCards');target?.scrollIntoView({behavior:'smooth',block:'center'});target?.querySelector('button:not(:disabled)')?.focus({preventScroll:true});},80);return;}const el=xmlFieldElement(first);const step=el?.closest('.step');if(step)goto(Number(step.dataset.step));setTimeout(()=>{el?.scrollIntoView({behavior:'smooth',block:'center'});if(el&&/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(el.tagName)&&el.type!=='hidden')el.focus({preventScroll:true});},80);}
 function handleXmlMissingFields(missingFields,source){clearXmlFieldErrors();missingFields.forEach(markXmlFieldError);focusFirstXmlFieldError(missingFields);const message=formatXmlMissingFieldsMessage(missingFields);setFieldValue('save_result',message);logAction('XML не сформирован: не заполнены обязательные поля',{source,missing_fields:missingFields});alert(message);}
 async function downloadBitrixXml(button){setButtonBusy(button,true);clearResultReport('xml_report_cards');try{const payload=bitrixXmlPayload();const clientMissing=validateXmlRequiredFields(payload);if(clientMissing.length){handleXmlMissingFields(clientMissing,'client');return;}const response=await fetch('export.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/xml, application/json'},body:JSON.stringify(payload)});const type=response.headers.get('Content-Type')||'';if(type.includes('application/json')){const err=await response.json();if(!response.ok||err.success===false){const missing=Array.isArray(err.details?.missing_fields)?err.details.missing_fields.filter(code=>XML_REQUIRED_FIELD_LABELS[code]):[];if(missing.length){handleXmlMissingFields(missing,'server');return;}throw new Error(err.message||'Ошибка формирования XML');}}else if(!response.ok){throw new Error('Ошибка HTTP '+response.status);}clearXmlFieldErrors();const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/);const filename=match?match[1]:'bitrix-article.xml';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);const warningsHeader=response.headers.get('X-TEMED-XML-Warnings')||'';let xmlWarnings=[];if(warningsHeader){try{const parsed=JSON.parse(decodeURIComponent(warningsHeader));if(Array.isArray(parsed))xmlWarnings=parsed.filter(w=>typeof w==='string'&&w.trim()!=='');}catch(e){}}if(xmlWarnings.length){logAction('XML сформирован с предупреждениями',{warnings:xmlWarnings});}renderResultReport('xml_report_cards',buildResultReport('Готово: XML сформирован.',xmlWarnings.map(w=>({raw:w,severity:'warning'}))));setFieldValue('save_result',`XML сформирован: ${filename}
 Статус статьи в XML: неактивна`);logAction('XML сформирован',{filename});}catch(e){const message=String(e.message||e||'Ошибка формирования XML');setFieldValue('save_result',message);logAction('XML не сформирован',{error:message});alert(message);}finally{setButtonBusy(button,false);}}
@@ -2121,16 +2121,25 @@ function collectFormFields(){const fields={};document.querySelectorAll('#article
 function collectDraftSnapshot(){
   const fields=collectFormFields();
   const article={name:fieldValue('result_name'),code:fieldValue('result_code'),seo_title:fieldValue('result_seo_title'),meta_description:fieldValue('result_meta_description'),preview_text:fieldValue('result_preview'),short_answer:fieldValue('result_short_answer'),detail_html:fieldValue('result_detail_html'),sources:fieldValue('result_sources'),related_articles:fieldValue('result_related_articles')};
-  return sanitizeDraftValue({schema_version:'1.0',saved_at:new Date().toISOString(),current_step:Number(document.querySelector('.step.on')?.dataset.step||0),fields,article,medical_review:{questions:fieldValue('med_questions'),answers:fieldValue('med_answers')},validation:{report:fieldValue('validation_report'),revision_request:fieldValue('revision_request')},layout:APP_STATE.layout||{},uniqueness:{internal:APP_STATE.uniqueness?.internal?.status==='completed'?APP_STATE.uniqueness.internal:null,external:APP_STATE.uniqueness?.external?.status==='completed'?APP_STATE.uniqueness.external:null},draft_state:{...APP_STATE.draft,is_dirty:false}});
+  return sanitizeDraftValue({schema_version:'1.1',saved_at:new Date().toISOString(),current_step:Number(document.querySelector('.step.on')?.dataset.step||0),fields,article,medical_review:{questions:fieldValue('med_questions'),answers:fieldValue('med_answers')},validation:{report:fieldValue('validation_report'),revision_request:fieldValue('revision_request')},layout:APP_STATE.layout||{},uniqueness:{internal:APP_STATE.uniqueness?.internal?.status==='completed'?APP_STATE.uniqueness.internal:null,external:APP_STATE.uniqueness?.external?.status==='completed'?APP_STATE.uniqueness.external:null},draft_state:{...APP_STATE.draft,is_dirty:false}});
+}
+/* маппинг старой 14-шаговой нумерации на новую 7-шаговую */
+const OLD_TO_NEW_STEP={0:0,1:0,2:0,3:1,4:1,5:2,6:2,7:3,8:4,9:5,10:5,11:6,12:6,13:0};
+function migrateSnapshotStep(snapshot){
+  const raw=Number(snapshot.current_step||0);
+  if(snapshot.schema_version==='1.1') return raw; // новые снимки уже в новой нумерации
+  return OLD_TO_NEW_STEP[raw]!==undefined?OLD_TO_NEW_STEP[raw]:0;
 }
 function applyDraftSnapshot(snapshot){
-  if(!snapshot||snapshot.schema_version!=='1.0') throw new Error('SNAPSHOT_UNSUPPORTED_VERSION');
+  if(!snapshot||!['1.0','1.1'].includes(snapshot.schema_version)) throw new Error('SNAPSHOT_UNSUPPORTED_VERSION');
   Object.entries(snapshot.fields||{}).forEach(([key,value])=>setFieldValue(key,value));
   Object.entries(snapshot.article||{}).forEach(([key,value])=>setFieldValue('result_'+key,value));
   setFieldValue('med_questions',snapshot.medical_review?.questions||'');setFieldValue('med_answers',snapshot.medical_review?.answers||'');setFieldValue('validation_report',snapshot.validation?.report||'');setFieldValue('revision_request',snapshot.validation?.revision_request||'');
   APP_STATE.layout={...APP_STATE.layout,...(snapshot.layout||{})};
   APP_STATE.uniqueness.internal=snapshot.uniqueness?.internal||null;APP_STATE.uniqueness.external=snapshot.uniqueness?.external||null;
-  if(typeof showStep==='function') showStep(Number(snapshot.current_step||0));
+  const step=migrateSnapshotStep(snapshot);
+  if(typeof showStep==='function') showStep(step);
+  if(typeof window.refreshCardIndicators==='function') window.refreshCardIndicators();
   APP_STATE.draft.is_dirty=false;renderDraftState();
 }
 async function callDraftApi(action,data={},button=null){return callN8n(action,data,button);}
@@ -2170,7 +2179,51 @@ async function unarchiveDraft(draftId){await callDraftApi('draft_unarchive',{dra
 async function purgeDraft(draftId){const confirm_name=window.prompt('Введите точное название черновика для окончательного удаления','');if(!confirm_name)return;await callDraftApi('draft_purge',{draft_id:draftId,confirm_name});return refreshDraftList();}
 window.collectDraftSnapshot=collectDraftSnapshot;window.applyDraftSnapshot=applyDraftSnapshot;window.callDraftApi=callDraftApi;window.openDraftSaveModal=openDraftSaveModal;window.saveCurrentDraft=saveCurrentDraft;window.loadDraft=loadDraft;window.loadDraftVersion=loadDraftVersion;window.restoreDraftVersion=restoreDraftVersion;window.refreshDraftList=refreshDraftList;window.archiveDraft=archiveDraft;window.unarchiveDraft=unarchiveDraft;window.purgeDraft=purgeDraft;window.markDraftDirty=markDraftDirty;
 document.addEventListener('input',event=>{if(event.target?.closest('#articleForm'))markDraftDirty();});
-document.addEventListener('click',event=>{const tab=event.target.closest('[data-top-tab]');if(tab){document.querySelectorAll('[data-top-tab]').forEach(el=>el.classList.toggle('on',el===tab));document.querySelector('.content')?.classList.toggle('is-hidden',tab.dataset.topTab==='drafts');document.getElementById('draftsView')?.classList.toggle('is-hidden',tab.dataset.topTab!=='drafts');if(tab.dataset.topTab==='drafts')refreshDraftList();}if(event.target.id==='draftSaveBtn')saveCurrentDraft(event.target);if(event.target.id==='draftOpenSaveModal')openDraftSaveModal();if(event.target.id==='draftSaveCancel')document.getElementById('draftSaveModal')?.classList.add('is-hidden');if(event.target.id==='draftRefreshBtn')refreshDraftList();});
+document.addEventListener('click',event=>{const tab=event.target.closest('[data-top-tab]');if(tab){const view=tab.dataset.topTab;document.querySelectorAll('[data-top-tab]').forEach(el=>el.classList.toggle('on',el===tab));document.querySelector('.content')?.classList.toggle('is-hidden',view!=='editor');document.getElementById('draftsView')?.classList.toggle('is-hidden',view!=='drafts');document.getElementById('journalView')?.classList.toggle('is-hidden',view!=='journal');if(view==='drafts')refreshDraftList();}if(event.target.id==='draftSaveBtn')saveCurrentDraft(event.target);if(event.target.id==='draftOpenSaveModal')openDraftSaveModal();if(event.target.id==='draftSaveCancel')document.getElementById('draftSaveModal')?.classList.add('is-hidden');if(event.target.id==='draftRefreshBtn')refreshDraftList();});
 renderDraftState();
 
 setDefaultPublicationDates();
+
+/* ===== сворачиваемые карточки (только UI, в снимок черновика не пишется) ===== */
+(function(){
+  function cardFilled(card){
+    return [...card.querySelectorAll('input,textarea,select')].some(el=>{
+      const t=(el.type||'').toLowerCase();
+      if(t==='file'||t==='button'||t==='submit'||t==='reset')return false;
+      if(t==='checkbox'||t==='radio')return el.checked;
+      return String(el.value==null?'':el.value).trim().length>0;
+    });
+  }
+  function updateDot(card){
+    const dot=card.querySelector(':scope > h3 > .cc-dot');
+    if(dot)dot.classList.toggle('filled',cardFilled(card));
+  }
+  function refresh(){document.querySelectorAll('#articleForm .card.collapsible').forEach(updateDot);}
+  window.refreshCardIndicators=refresh;
+  // пометить карточки с заголовком h3 как сворачиваемые и добавить индикатор заполненности
+  document.querySelectorAll('#articleForm .card').forEach(card=>{
+    const h3=card.querySelector(':scope > h3');
+    if(!h3)return;
+    card.classList.add('collapsible');
+    if(!h3.querySelector('.cc-dot')){
+      const dot=document.createElement('span');dot.className='cc-dot';h3.insertBefore(dot,h3.firstChild);
+    }
+    h3.addEventListener('click',()=>{card.classList.toggle('collapsed');updateDot(card);});
+  });
+  // состояние по умолчанию: шаг 0 — развёрнуты помеченные карточки; иначе всё развёрнуто при ≤3, иначе только первая
+  document.querySelectorAll('#articleForm .step').forEach(step=>{
+    const cards=[...step.querySelectorAll('.card.collapsible')];
+    const isStep0=step.dataset.step==='0';
+    cards.forEach((card,i)=>{
+      let open;
+      if(isStep0)open=card.hasAttribute('data-collapse-default');
+      else if(cards.length<=3)open=true;
+      else open=(i===0);
+      card.classList.toggle('collapsed',!open);
+    });
+  });
+  document.addEventListener('input',refresh);
+  document.addEventListener('change',refresh);
+  document.addEventListener('click',event=>{if(event.target.closest('#articleForm'))setTimeout(refresh,0);});
+  refresh();
+})();

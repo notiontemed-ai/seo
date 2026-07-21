@@ -21,26 +21,17 @@
     </div>
 
     <div class="phase">Задание</div>
-    <button class="navstep current" data-step="0"><span class="dot"><span>1</span></span>Начало работы</button>
-    <button class="navstep" data-step="1"><span class="dot"><span>2</span></span>Поисковая задача</button>
-    <button class="navstep" data-step="2"><span class="dot"><span>3</span></span>Размещение и автор</button>
-
-    <div class="phase">Подготовка</div>
-    <button class="navstep" data-step="3"><span class="dot"><span>4</span></span>Контекст TEMED</button>
-    <button class="navstep" data-step="4"><span class="dot"><span>5</span></span>Внешние источники</button>
-    <button class="navstep" data-step="5"><span class="dot"><span>6</span></span>Указания генератору</button>
+    <button class="navstep current" data-step="0"><span class="dot"><span>1</span></span>Задача</button>
+    <button class="navstep" data-step="1"><span class="dot"><span>2</span></span>Материалы</button>
+    <button class="navstep" data-step="2"><span class="dot"><span>3</span></span>Задание и план</button>
 
     <div class="phase">Генерация</div>
-    <button class="navstep" data-step="6"><span class="dot"><span>7</span></span>Задание и план</button>
-    <button class="navstep" data-step="7"><span class="dot"><span>8</span></span>Генерация текста</button>
-    <button class="navstep" data-step="8"><span class="dot"><span>9</span></span>Медредактура</button>
+    <button class="navstep" data-step="3"><span class="dot"><span>4</span></span>Текст</button>
+    <button class="navstep" data-step="4"><span class="dot"><span>5</span></span>Медредактура</button>
 
     <div class="phase">Выпуск</div>
-    <button class="navstep" data-step="9"><span class="dot"><span>10</span></span>Результат</button>
-    <button class="navstep" data-step="10"><span class="dot"><span>11</span></span>Проверка</button>
-    <button class="navstep" data-step="11"><span class="dot"><span>12</span></span>Вёрстка</button>
-    <button class="navstep" data-step="12"><span class="dot"><span>13</span></span>Сохранение</button>
-    <button class="navstep" data-step="13"><span class="dot"><span>14</span></span>Журнал</button>
+    <button class="navstep" data-step="5"><span class="dot"><span>6</span></span>Результат и проверка</button>
+    <button class="navstep" data-step="6"><span class="dot"><span>7</span></span>Вёрстка и выпуск</button>
 
     <div class="side-foot">
       <div class="st">ID генерации</div>
@@ -53,7 +44,7 @@
   <!-- ================= MAIN ================= -->
   <div class="main">
     <div class="topbar">
-      <div class="top-tabs"><button type="button" class="top-tab on" data-top-tab="editor">Редактор</button><button type="button" class="top-tab" data-top-tab="drafts">Черновики</button></div><span class="tname" id="topTaskName">Новая задача</span>
+      <div class="top-tabs"><button type="button" class="top-tab on" data-top-tab="editor">Редактор</button><button type="button" class="top-tab" data-top-tab="drafts">Черновики</button><button type="button" class="top-tab" data-top-tab="journal">Журнал</button></div><span class="tname" id="topTaskName">Новая задача</span>
       <button type="button" class="themebtn" id="themeBtn" title="Переключить тему">☾</button>
       <span class="badge mode" id="topMode">Новая статья</span>
       <span class="badge draft" id="topStructBadge">структура не выбрана</span><span class="badge" id="draftCurrentName">Новый черновик</span><span class="badge" id="draftCurrentVersion">без версии</span><span class="badge warn is-hidden" id="draftDirtyBadge">несохранённые изменения</span><button type="button" class="btn primary" id="draftOpenSaveModal">Сохранить черновик</button>
@@ -70,14 +61,16 @@
       <div id="draftList" class="draft-list"><div class="hint">Откройте вкладку, чтобы загрузить список.</div></div>
     </section>
 
-    <form id="articleForm" class="content" onsubmit="return false">
-    <!-- ========== STEP 0: Начало работы ========== -->
+    <form id="articleForm" onsubmit="return false">
+    <div class="content" id="editorView">
+    <!-- ========== STEP 0: Задача ========== -->
     <section class="step on" data-step="0">
       <div class="step-head">
-        <h2>Начало работы</h2>
-        <p>Выберите режим и назовите задачу. При переработке система загрузит исходную статью через n8n и TEMED SEO API.</p>
+        <h2>Задача</h2>
+        <p>Режим работы, кейс врача, тема и запросы, интент и структура, размещение и автор — всё, что определяет поисковую задачу. При переработке система загрузит исходную статью через n8n и TEMED SEO API.</p>
       </div>
-      <div class="card">
+      <div class="card" data-collapse-default="open">
+        <h3>Начало работы</h3>
         <div class="field">
           <label>Режим работы</label>
           <div class="seg" id="modeSeg">
@@ -106,14 +99,38 @@
           <span>Загрузка справочников…</span>
         </div>
       </div>
-      <div class="stepnav"><span></span><button type="button" class="btn primary" data-nav="next">Далее: поисковая задача →</button></div>
-    </section>
-
-    <!-- ========== STEP 1: Поисковая задача ========== -->
-    <section class="step" data-step="1">
-      <div class="step-head">
-        <h2>Поисковая задача</h2>
-        <p>Тема, запросы, интент и структура. Выбор интента фильтрует доступные структуры; версия структуры сохраняется для сравнения эффективности.</p>
+      <div class="card" data-collapse-default="open">
+        <h3>Кейс врача (аудио)</h3>
+        <div class="row2">
+          <div class="field">
+            <label for="case_audio">Аудиозапись кейса</label>
+            <input type="file" id="case_audio" accept="audio/*">
+            <div class="hint sys">Голосовой кейс врача. Файл не сохраняется — в редактор возвращается только расшифровка. Максимум 25 МБ.</div>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn" id="case_audio_transcribe" data-action="transcribe_case">Транскрибировать</button>
+            <div class="hint" id="case_audio_status" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="case_transcript">Расшифровка кейса</label>
+          <textarea id="case_transcript" name="case_transcript" rows="8" placeholder="Здесь появится причёсанная расшифровка аудиокейса. Текст можно редактировать; повторная транскрибация дописывается ниже."></textarea>
+          <div class="hint sys">Расшифровка передаётся генератору статьи как внутренний материал врача.</div>
+        </div>
+        <div class="field">
+          <button type="button" class="btn" id="case_show_raw">Показать исходную расшифровку</button>
+          <textarea id="case_transcript_raw" name="case_transcript_raw" rows="6" readonly class="is-hidden" placeholder="Исходная расшифровка Whisper без обработки."></textarea>
+        </div>
+        <div class="field">
+          <label for="case_summary">О чём кейс</label>
+          <textarea id="case_summary" name="case_summary" rows="3" readonly placeholder="Краткая аннотация кейса появится после обработки."></textarea>
+        </div>
+        <div class="field">
+          <label>Куда встроить кейс</label>
+          <div class="selected-list" id="case_topics"></div>
+          <input type="hidden" id="case_topics_json" name="case_topics_json">
+        </div>
       </div>
 
       <div class="card">
@@ -183,15 +200,7 @@
         <input type="hidden" id="article_structure_version" name="article_structure_version">
         <div class="struct-detail" id="structDetail"></div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: размещение и автор →</button></div>
-    </section>
 
-    <!-- ========== STEP 2: Размещение и автор ========== -->
-    <section class="step" data-step="2">
-      <div class="step-head">
-        <h2>Размещение и автор</h2>
-        <p>Куда встанет статья и кто за ней стоит. Список разделов и врачей приходит из TEMED SEO API.</p>
-      </div>
       <div class="card">
         <h3>Размещение</h3>
         <div class="row2">
@@ -218,6 +227,7 @@
           <input id="new_article_section" name="new_article_section" type="text" placeholder="Новый раздел будет создан позднее отдельным write-процессом">
         </div>
       </div>
+
       <div class="card">
         <h3>Автор и медицинская проверка</h3>
         <div class="row2">
@@ -256,47 +266,14 @@
           <div class="hint sys">Используется как приоритетный внутренний источник — смысл не меняется при генерации.</div>
         </div>
       </div>
-      <div class="card">
-        <h3>Кейс врача (аудио)</h3>
-        <div class="row2">
-          <div class="field">
-            <label for="case_audio">Аудиозапись кейса</label>
-            <input type="file" id="case_audio" accept="audio/*">
-            <div class="hint sys">Голосовой кейс врача. Файл не сохраняется — в редактор возвращается только расшифровка. Максимум 25 МБ.</div>
-          </div>
-          <div class="field">
-            <label>&nbsp;</label>
-            <button type="button" class="btn" id="case_audio_transcribe" data-action="transcribe_case">Транскрибировать</button>
-            <div class="hint" id="case_audio_status" role="status" aria-live="polite"></div>
-          </div>
-        </div>
-        <div class="field">
-          <label for="case_transcript">Расшифровка кейса</label>
-          <textarea id="case_transcript" name="case_transcript" rows="8" placeholder="Здесь появится причёсанная расшифровка аудиокейса. Текст можно редактировать; повторная транскрибация дописывается ниже."></textarea>
-          <div class="hint sys">Расшифровка передаётся генератору статьи как внутренний материал врача.</div>
-        </div>
-        <div class="field">
-          <button type="button" class="btn" id="case_show_raw">Показать исходную расшифровку</button>
-          <textarea id="case_transcript_raw" name="case_transcript_raw" rows="6" readonly class="is-hidden" placeholder="Исходная расшифровка Whisper без обработки."></textarea>
-        </div>
-        <div class="field">
-          <label for="case_summary">О чём кейс</label>
-          <textarea id="case_summary" name="case_summary" rows="3" readonly placeholder="Краткая аннотация кейса появится после обработки."></textarea>
-        </div>
-        <div class="field">
-          <label>Куда встроить кейс</label>
-          <div class="selected-list" id="case_topics"></div>
-          <input type="hidden" id="case_topics_json" name="case_topics_json">
-        </div>
-      </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: контекст TEMED →</button></div>
+      <div class="stepnav"><span></span><button type="button" class="btn primary" data-nav="next">Далее: материалы →</button></div>
     </section>
 
-    <!-- ========== STEP 3: Контекст TEMED ========== -->
-    <section class="step" data-step="3">
+    <!-- ========== STEP 1: Материалы ========== -->
+    <section class="step" data-step="1">
       <div class="step-head">
-        <h2>Контекст из материалов TEMED</h2>
-        <p>Связанные статьи для перелинковки и внутренние факты клиники — то, чего генератор не должен выдумывать.</p>
+        <h2>Материалы</h2>
+        <p>Контекст TEMED и внешние источники: клиника и услуга, связанные материалы, внутренние факты и утверждённые источники — то, чего генератор не должен выдумывать.</p>
       </div>
       <div class="card">
         <h3>Клиника и услуга</h3>
@@ -357,16 +334,8 @@
           <textarea id="internal_facts" name="internal_facts" rows="7" placeholder="Внутренние стандарты, реальные параметры процедур, ограничения…"></textarea>
         </div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: внешние источники →</button></div>
-    </section>
-
-    <!-- ========== STEP 4: Внешние источники ========== -->
-    <section class="step" data-step="4">
-      <div class="step-head">
-        <h2>Внешние источники</h2>
-        <p>Исследовательский этап: n8n подбирает и проверяет источники, редактор утверждает итоговый список.</p>
-      </div>
       <div class="card">
+        <h3>Внешние источники</h3>
         <div class="field">
           <label for="source_requirements">Требования к источникам</label>
           <textarea id="source_requirements" name="source_requirements" rows="3" placeholder="Какие источники допустимы, какая глубина проверки нужна"></textarea>
@@ -384,16 +353,17 @@
           <textarea id="approved_sources" name="approved_sources" rows="5" placeholder="Только источники, разрешённые для статьи"></textarea>
         </div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: указания генератору →</button></div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: задание и план →</button></div>
     </section>
 
-    <!-- ========== STEP 5: Указания генератору ========== -->
-    <section class="step" data-step="5">
+    <!-- ========== STEP 2: Задание и план ========== -->
+    <section class="step" data-step="2">
       <div class="step-head">
-        <h2>Дополнительные указания генератору</h2>
-        <p>Поверх правил выбранной структуры и общих YMYL-требований.</p>
+        <h2>Задание и план статьи</h2>
+        <p>Дополнительные указания генератору поверх правил структуры, сборка JSON-задания и план. Полную генерацию запускайте только после утверждения плана.</p>
       </div>
       <div class="card">
+        <h3>Указания генератору</h3>
         <div class="row2">
           <div class="field">
             <label for="required_content">Что обязательно включить</label>
@@ -408,15 +378,6 @@
           <label for="tone_notes">Особенности тона и подачи</label>
           <textarea id="tone_notes" name="tone_notes" rows="3" placeholder="Особенности подачи для конкретной статьи"></textarea>
         </div>
-      </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: задание и план →</button></div>
-    </section>
-
-    <!-- ========== STEP 6: Задание и план ========== -->
-    <section class="step" data-step="6">
-      <div class="step-head">
-        <h2>Задание и план статьи</h2>
-        <p>Соберите JSON-задание, проверьте его, получите план — и только после утверждения плана запускайте полную генерацию.</p>
       </div>
       <div class="card">
         <h3>Техническое задание</h3>
@@ -437,13 +398,13 @@
           <textarea id="generated_outline" name="generated_outline" rows="12" class="code"></textarea>
         </div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: генерация текста →</button></div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: текст →</button></div>
     </section>
 
-    <!-- ========== STEP 7: Генерация текста ========== -->
-    <section class="step" data-step="7">
+    <!-- ========== STEP 3: Текст ========== -->
+    <section class="step" data-step="3">
       <div class="step-head">
-        <h2>Генерация текста</h2>
+        <h2>Текст</h2>
         <p>Встроенный ассистент пишет прямо в приложении. Внешний — по переносимому пакету задания, готовый текст вставляется вручную.</p>
       </div>
       <div class="card">
@@ -460,7 +421,7 @@
       <div class="genpanel on" id="panelBuiltin">
         <div class="card">
           <h3>Встроенный ассистент</h3>
-          <div class="callout info"><b>Автоматический контур.</b> Ассистент подключён к веб-приложению: задание, структура, контекст и источники передаются сами. Готовый текст появится на шаге «Результат».</div>
+          <div class="callout info"><b>Автоматический контур.</b> Ассистент подключён к веб-приложению: задание, структура, контекст и источники передаются сами. Готовый текст появится на шаге «Результат и проверка».</div>
           <div class="btnrow">
             <button type="button" class="btn primary" data-action="generate_article">Сгенерировать статью</button>
             <span class="hint sys hint-flush">Запрос выполняется через защищённый серверный proxy.php.</span>
@@ -488,15 +449,15 @@
           </div>
           <div class="btnrow">
             <button type="button" class="btn primary" data-action="load_external_text">Загрузить текст в результат</button>
-            <span class="hint sys hint-flush">Текст попадёт в поле «HTML статьи» на шаге «Результат».</span>
+            <span class="hint sys hint-flush">Текст попадёт в поле «HTML статьи» на шаге «Результат и проверка».</span>
           </div>
         </div>
       </div>
       <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: медредактура →</button></div>
     </section>
 
-    <!-- ========== STEP 8: Медредактура ========== -->
-    <section class="step" data-step="8">
+    <!-- ========== STEP 4: Медредактура ========== -->
+    <section class="step" data-step="4">
       <div class="step-head">
         <h2>Медредактура</h2>
         <p>Ассистент собирает из текста спорные формулировки и вопросы для врача. Врач отвечает, ответы возвращаются в текст точечно.</p>
@@ -524,14 +485,14 @@
         </div>
       </div>
       <div id="med_report_cards" class="result-report-host" aria-live="polite"></div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: результат →</button></div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: результат и проверка →</button></div>
     </section>
 
-    <!-- ========== STEP 9: Результат ========== -->
-    <section class="step" data-step="9">
+    <!-- ========== STEP 5: Результат и проверка ========== -->
+    <section class="step" data-step="5">
       <div class="step-head">
-        <h2>Результат генерации</h2>
-        <p>Проверьте и отредактируйте всё, что уйдёт в Bitrix. Ничего не публикуется автоматически.</p>
+        <h2>Результат и проверка</h2>
+        <p>Проверьте и отредактируйте всё, что уйдёт в Bitrix, затем запустите автопроверки и проверку уникальности. Ничего не публикуется автоматически.</p>
       </div>
       <div class="card">
         <h3>Мета и служебные поля</h3>
@@ -587,15 +548,6 @@
           </div>
         </div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: проверка →</button></div>
-    </section>
-
-    <!-- ========== STEP 10: Проверка ========== -->
-    <section class="step" data-step="10">
-      <div class="step-head">
-        <h2>Проверка результата</h2>
-        <p>Автопроверка обязательных блоков, запрещённых формулировок, медицинских утверждений, источников и HTML.</p>
-      </div>
       <div class="card">
         <div class="btnrow mb-14">
           <button type="button" class="btn primary" data-action="validate_article">Проверить статью</button>
@@ -628,15 +580,14 @@
         </div>
         <div class="outdated-warning is-hidden" id="uniqueness_outdated_warning">Текст изменён после проверки. Результат устарел.</div>
       </div>
-
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: вёрстка →</button></div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: вёрстка и выпуск →</button></div>
     </section>
 
-    <!-- ========== STEP 11: Вёрстка ========== -->
-    <section class="step" data-step="11">
+    <!-- ========== STEP 6: Вёрстка и выпуск ========== -->
+    <section class="step" data-step="6">
       <div class="step-head">
-        <h2>Задание на вёрстку</h2>
-        <p>Выберите шаблон из доступных и сформируйте задание. Реестр шаблонов загружается из API — сейчас доступен default.</p>
+        <h2>Вёрстка и выпуск</h2>
+        <p>Сформируйте задание на вёрстку, примените результат — и выпустите статью через XML-экспорт. Реестр шаблонов загружается из API — сейчас доступен default.</p>
       </div>
       <div class="card">
         <h3>Шаблон страницы</h3>
@@ -685,15 +636,6 @@
         </div>
         <div class="hint">После применения результат будет записан в итоговые поля статьи. Bitrix XML формируется из итоговой версии статьи. XML будет сформирован из применённой версии статьи.</div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: сохранение →</button></div>
-    </section>
-
-    <!-- ========== STEP 12: Сохранение ========== -->
-    <section class="step" data-step="12">
-      <div class="step-head">
-        <h2>Сохранение</h2>
-        <p>Два сценария выпуска. Пока действует первый — безопасный, без прав записи в Bitrix.</p>
-      </div>
       <div class="card">
         <div class="callout info"><b>Сценарий 1 (текущий).</b> Система формирует XML, вы скачиваете его и импортируете в Bitrix вручную. Права записи не выдаются.</div>
         <div class="btnrow mb-18">
@@ -709,11 +651,12 @@
           <textarea id="save_result" name="save_result" rows="5" class="code"></textarea>
         </div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Журнал →</button></div>
+      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><span></span></div>
     </section>
+    </div>
 
-    <!-- ========== STEP 13: Журнал ========== -->
-    <section class="step" data-step="13">
+    <!-- ========== JOURNAL (отдельное представление, вне степпера) ========== -->
+    <section id="journalView" class="journal-view is-hidden">
       <div class="step-head">
         <h2>Техническая информация</h2>
         <p>Служебные данные генерации и журнал действий для диагностики.</p>
@@ -734,7 +677,6 @@
           <textarea id="action_log" name="action_log" rows="14" class="log" readonly></textarea>
         </div>
       </div>
-      <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><span></span></div>
     </section>
     </form>
   </div>
