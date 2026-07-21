@@ -76,6 +76,19 @@ body{margin:0;background:var(--paper);color:var(--ink);font:14px/1.5 'Inter','He
 .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:22px 24px;margin-bottom:18px}
 .card h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin:0 0 16px;font-weight:600}
 
+/* ---- сворачиваемые карточки ---- */
+.card.collapsible>h3{cursor:pointer;user-select:none;display:flex;align-items:center;gap:8px}
+.card.collapsible>h3::after{content:"▾";margin-left:auto;font-size:11px;opacity:.55;font-weight:400}
+.card.collapsed>h3{margin-bottom:0}
+.card.collapsed>h3::after{content:"▸"}
+.card.collapsed>*:not(h3){display:none}
+.cc-dot{display:none;width:8px;height:8px;border-radius:50%;background:var(--muted);flex:0 0 auto}
+.card.collapsed .cc-dot{display:inline-block}
+.cc-dot.filled{background:var(--ok)}
+
+/* ---- журнал (отдельное представление) ---- */
+.journal-view{padding:24px;overflow:auto}
+
 /* ---- fields ---- */
 .field{margin-bottom:18px}
 .field:last-child{margin-bottom:0}
