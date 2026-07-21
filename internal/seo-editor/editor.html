@@ -523,6 +523,7 @@
           <span class="hint sys hint-flush">Меняются только согласованные формулировки — остальной текст не трогается.</span>
         </div>
       </div>
+      <div id="med_report_cards" class="result-report-host" aria-live="polite"></div>
       <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: результат →</button></div>
     </section>
 
@@ -599,6 +600,7 @@
         <div class="btnrow mb-14">
           <button type="button" class="btn primary" data-action="validate_article">Проверить статью</button>
         </div>
+        <div id="validation_report_cards" class="result-report-host" aria-live="polite"></div>
         <div class="field">
           <label for="validation_report">Отчёт проверки</label>
           <textarea id="validation_report" name="validation_report" rows="10" class="code"></textarea>
@@ -701,6 +703,7 @@
         <div class="btnrow mb-18">
           <button type="button" class="btn" data-action="create_bitrix_draft" disabled aria-disabled="true">Создать неактивный черновик в Bitrix</button>
         </div>
+        <div id="xml_report_cards" class="result-report-host" aria-live="polite"></div>
         <div class="field">
           <label for="save_result">Результат сохранения</label>
           <textarea id="save_result" name="save_result" rows="5" class="code"></textarea>

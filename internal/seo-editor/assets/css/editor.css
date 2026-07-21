@@ -198,6 +198,25 @@ pre.json{
 /* log */
 textarea.log{background:#17231a;color:#a9bf9a;border:none;font-family:'IBM Plex Mono',monospace;font-size:12px;min-height:220px;border-radius:16px}
 
+/* ===== человекочитаемые отчёты проверок ===== */
+.result-report-host:empty{display:none}
+.result-report-host{margin-top:12px}
+.result-report .rr-summary{font-weight:600;color:var(--ink);font-size:13.5px;line-height:1.5}
+.result-report .rr-cards{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.rr-card{border-radius:14px;padding:12px 14px;border:1px solid var(--line);background:var(--card-alt)}
+.rr-card-title{font-weight:600;font-size:13.5px;line-height:1.4}
+.rr-card-consequence{font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-top:5px}
+.rr-card-action{font-size:12.5px;color:var(--ink);line-height:1.5;margin-top:7px;font-weight:500}
+.rr-card-action::before{content:"→ "}
+.rr-critical{background:var(--coral-bg);border-color:var(--coral)}
+.rr-critical .rr-card-title{color:#8a3b25}
+.rr-warning{background:var(--amber-bg);border-color:var(--amber)}
+.rr-warning .rr-card-title{color:var(--amber-text)}
+.rr-info{background:var(--lime-bg);border-color:var(--lime-soft)}
+.rr-info .rr-card-title{color:var(--teal-deep)}
+.rr-confirm{display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;font-weight:600;color:#8a3b25;cursor:pointer}
+.rr-confirm input{width:16px;height:16px;flex:0 0 auto}
+
 /* callout */
 .callout{border-radius:14px;padding:12px 16px;font-size:13px;line-height:1.5;margin-bottom:16px}
 .callout.info{background:var(--lime-bg);color:var(--teal-deep)}
