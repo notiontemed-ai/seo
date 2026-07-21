@@ -699,7 +699,7 @@ function getPropertyEnumValues(int $iblockId, string $propertyCode): array
 }
 
 
-function getIblockSites(int $iblockId): array
+function temedSeoGetIblockSites(int $iblockId): array
 {
     $sites = [];
     $result = CIBlock::GetSite($iblockId);
@@ -715,7 +715,7 @@ function getIblockSites(int $iblockId): array
     return $sites;
 }
 
-function getIblockTypeName(string $typeId): string
+function temedSeoGetIblockTypeName(string $typeId): string
 {
     static $cache = [];
 
@@ -735,7 +735,7 @@ function getIblockTypeName(string $typeId): string
     return $cache[$typeId];
 }
 
-function getIblockList(array $config): array
+function temedSeoGetAllIblocks(array $config): array
 {
     $items = [];
     $result = CIBlock::GetList(
@@ -752,10 +752,10 @@ function getIblockList(array $config): array
             'name' => (string)($iblock['NAME'] ?? ''),
             'code' => (string)($iblock['CODE'] ?? ''),
             'type_id' => $typeId,
-            'type_name' => getIblockTypeName($typeId),
+            'type_name' => temedSeoGetIblockTypeName($typeId),
             'active' => (string)($iblock['ACTIVE'] ?? ''),
             'sort' => (int)($iblock['SORT'] ?? 0),
-            'sites' => $iblockId > 0 ? getIblockSites($iblockId) : [],
+            'sites' => $iblockId > 0 ? temedSeoGetIblockSites($iblockId) : [],
             'list_page_url' => (string)($iblock['LIST_PAGE_URL'] ?? ''),
             'section_page_url' => (string)($iblock['SECTION_PAGE_URL'] ?? ''),
             'detail_page_url' => (string)($iblock['DETAIL_PAGE_URL'] ?? ''),
@@ -767,7 +767,7 @@ function getIblockList(array $config): array
     return $items;
 }
 
-function stringifyPropertyDefaultValue($value): string
+function temedSeoStringifyPropertyDefaultValue($value): string
 {
     if ($value === null || is_array($value) || is_object($value)) {
         return '';
@@ -776,7 +776,7 @@ function stringifyPropertyDefaultValue($value): string
     return (string)$value;
 }
 
-function normalizePropertySettings($settings)
+function temedSeoNormalizePropertySettings($settings)
 {
     if (is_array($settings) || is_object($settings)) {
         return $settings;
@@ -798,7 +798,7 @@ function normalizePropertySettings($settings)
     return $serialized;
 }
 
-function getPropertyEnumDefinitions(int $propertyId): array
+function temedSeoGetPropertyEnumDefinitions(int $propertyId): array
 {
     $items = [];
     $result = CIBlockPropertyEnum::GetList(
@@ -820,7 +820,7 @@ function getPropertyEnumDefinitions(int $propertyId): array
     return $items;
 }
 
-function getIblockPropertyDefinitions(int $iblockId): array
+function temedSeoGetIblockPropertyDefinitions(int $iblockId): array
 {
     $items = [];
     $result = CIBlockProperty::GetList(
@@ -853,7 +853,7 @@ function getIblockPropertyDefinitions(int $iblockId): array
             'linked_iblock_id' => !empty($property['LINK_IBLOCK_ID'])
                 ? (int)$property['LINK_IBLOCK_ID']
                 : null,
-            'default_value' => stringifyPropertyDefaultValue($property['DEFAULT_VALUE'] ?? ''),
+            'default_value' => temedSeoStringifyPropertyDefaultValue($property['DEFAULT_VALUE'] ?? ''),
             'with_description' => (string)($property['WITH_DESCRIPTION'] ?? 'N'),
             'searchable' => (string)($property['SEARCHABLE'] ?? 'N'),
             'filtrable' => (string)($property['FILTRABLE'] ?? 'N'),
@@ -861,9 +861,9 @@ function getIblockPropertyDefinitions(int $iblockId): array
             'list_type' => (string)($property['LIST_TYPE'] ?? ''),
             'row_count' => (int)($property['ROW_COUNT'] ?? 0),
             'col_count' => (int)($property['COL_COUNT'] ?? 0),
-            'settings' => normalizePropertySettings($property['USER_TYPE_SETTINGS'] ?? []),
+            'settings' => temedSeoNormalizePropertySettings($property['USER_TYPE_SETTINGS'] ?? []),
             'enum_values' => $type === 'L' && $propertyId > 0
-                ? getPropertyEnumDefinitions($propertyId)
+                ? temedSeoGetPropertyEnumDefinitions($propertyId)
                 : [],
         ];
     }
@@ -871,7 +871,7 @@ function getIblockPropertyDefinitions(int $iblockId): array
     return $items;
 }
 
-function requireExistingIblock(int $iblockId): void
+function temedSeoRequireExistingIblock(int $iblockId): void
 {
     $result = CIBlock::GetByID($iblockId);
 
@@ -1817,7 +1817,7 @@ switch ($action) {
         break;
 
     case 'iblocks':
-        $items = getIblockList($config);
+        $items = temedSeoGetAllIblocks($config);
         sendSuccess($items, ['count' => count($items)]);
         break;
 
@@ -1831,9 +1831,9 @@ switch ($action) {
             temedSeoSendError('Не передан корректный параметр iblock_id', 400);
         }
 
-        requireExistingIblock($iblockId);
+        temedSeoRequireExistingIblock($iblockId);
 
-        $items = getIblockPropertyDefinitions($iblockId);
+        $items = temedSeoGetIblockPropertyDefinitions($iblockId);
         sendSuccess($items, ['count' => count($items), 'iblock_id' => $iblockId]);
         break;
 
