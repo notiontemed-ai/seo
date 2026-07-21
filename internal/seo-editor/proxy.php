@@ -182,6 +182,35 @@ function proxyFetchApiData(string $apiUrl, string $apiToken, string $action)
 }
 
 /**
+ * Разобрать значение вида "40M" / "8M" / "1G" из php.ini в байты.
+ * Пустое значение или "0" трактуется как «без лимита» (0).
+ */
+function proxyIniBytes(string $value): int
+{
+    $value = trim($value);
+
+    if ($value === '') {
+        return 0;
+    }
+
+    $unit = strtolower($value[strlen($value) - 1]);
+    $number = (int)$value;
+
+    switch ($unit) {
+        case 'g':
+            $number *= 1024;
+            // fallthrough
+        case 'm':
+            $number *= 1024;
+            // fallthrough
+        case 'k':
+            $number *= 1024;
+    }
+
+    return $number > 0 ? $number : 0;
+}
+
+/**
  * Дополнить payload assistant_chat живым контекстом из TEMED SEO API:
  * system_manifest, article_structures и справочники (read-only reference data).
  *
@@ -332,6 +361,7 @@ $n8nActions = [
     'draft_delete',
     'draft_restore',
     'draft_purge',
+    'transcribe_case',
 ];
 
 if ($method === 'GET') {
@@ -393,6 +423,35 @@ if ($method === 'GET') {
 
 // method === 'POST'
 $rawBody = file_get_contents('php://input');
+$contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+$postMaxBytes = proxyIniBytes((string)ini_get('post_max_size'));
+
+// Если php://input пуст при ненулевом Content-Length — тело обрезано сервером
+// (как правило post_max_size меньше размера запроса). Возвращаем понятную
+// ошибку вместо молчаливого обрыва / «некорректного JSON».
+if (($rawBody === '' || $rawBody === false) && $contentLength > 0) {
+    if ($postMaxBytes > 0 && $contentLength > $postMaxBytes) {
+        proxySendJson(
+            [
+                'success' => false,
+                'error' => 'Тело запроса (~' . round($contentLength / 1048576, 1)
+                    . ' МБ) превышает серверный лимит post_max_size (~'
+                    . round($postMaxBytes / 1048576, 1) . ' МБ). Уменьшите размер '
+                    . 'аудиофайла или увеличьте post_max_size на сервере.',
+            ],
+            413
+        );
+    }
+
+    proxySendJson(
+        [
+            'success' => false,
+            'error' => 'Пустое тело POST-запроса при Content-Length ' . $contentLength . ' байт.',
+        ],
+        400
+    );
+}
+
 $payload = json_decode((string)$rawBody, true);
 
 if (!is_array($payload)) {
@@ -417,6 +476,24 @@ if ($action === '') {
         ],
         400
     );
+}
+
+// Транскрибация аудио: тело раздувается base64 (25 МБ аудио -> ~34 МБ),
+// поэтому допускаем до 40 МБ, но не больше — иначе понятная ошибка.
+if ($action === 'transcribe_case') {
+    $transcribeMaxBytes = 40 * 1024 * 1024;
+    $bodyBytes = $contentLength > 0 ? $contentLength : strlen((string)$rawBody);
+
+    if ($bodyBytes > $transcribeMaxBytes) {
+        proxySendJson(
+            [
+                'success' => false,
+                'error' => 'Аудиозапрос (~' . round($bodyBytes / 1048576, 1)
+                    . ' МБ) превышает лимит 40 МБ.',
+            ],
+            413
+        );
+    }
 }
 
 // Внутренняя уникальность считается нативно в PHP (TEMED SEO API POST
@@ -477,13 +554,16 @@ if (in_array($action, $n8nActions, true)) {
         error_log('TEMED SEO proxy: n8n_secret не задан в config.php.');
     }
 
+    // Транскрибация аудио может идти дольше обычных AI-действий.
+    $n8nTimeout = $action === 'transcribe_case' ? 300 : 120;
+
     $result = proxyHttpRequest(
         $n8nBaseUrl,
         'POST',
         $headers,
         proxyEncode($payload),
         10,
-        120
+        $n8nTimeout
     );
 
     proxyRelay($result, 'n8n');

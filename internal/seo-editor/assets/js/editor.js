@@ -1303,6 +1303,82 @@ async function loadExistingArticle(button){
   }
 }
 
+function readFileAsBase64(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>{
+      const result=String(reader.result||'');
+      const comma=result.indexOf(',');
+      resolve(comma>=0?result.slice(comma+1):result);
+    };
+    reader.onerror=()=>reject(new Error('Не удалось прочитать файл.'));
+    reader.readAsDataURL(file);
+  });
+}
+
+function appendCaseTranscript(text){
+  const el=document.getElementById('case_transcript');
+  if(!el)return;
+  const addition=String(text||'').trim();
+  if(!addition)return;
+  const existing=el.value.trim();
+  el.value=existing?existing+'\n\n'+addition:addition;
+  el.dispatchEvent(new Event('input',{bubbles:true}));
+}
+
+async function runTranscribeCase(button){
+  const input=document.getElementById('case_audio');
+  const status=document.getElementById('case_audio_status');
+  const file=input&&input.files&&input.files[0];
+
+  if(!file){
+    alert('Выберите аудиофайл кейса врача.');
+    return;
+  }
+
+  const maxBytes=25*1024*1024;
+
+  if(file.size>maxBytes){
+    alert('Аудиофайл слишком большой: '+(file.size/1048576).toFixed(1)+' МБ. Максимум 25 МБ.');
+    return;
+  }
+
+  if(status)status.textContent='Чтение файла…';
+
+  let audio_base64;
+
+  try{
+    audio_base64=await readFileAsBase64(file);
+  }catch(error){
+    if(status)status.textContent='Ошибка чтения файла';
+    alert(String(error.message||error));
+    return;
+  }
+
+  if(status)status.textContent='Транскрибация…';
+
+  try{
+    const data=await callN8n('transcribe_case',{
+      filename:file.name,
+      mime_type:file.type||'application/octet-stream',
+      audio_base64
+    },button);
+
+    const transcript=data&&typeof data.transcript==='string'?data.transcript:'';
+
+    if(!transcript.trim()){
+      throw new Error('Сервис вернул пустую расшифровку.');
+    }
+
+    appendCaseTranscript(transcript);
+
+    if(status)status.textContent='Готово';
+  }catch(_){
+    if(status)status.textContent='Ошибка транскрибации';
+    // callN8n уже показал сообщение об ошибке.
+  }
+}
+
 document.getElementById('generated_outline').addEventListener('input',()=>{
   document.getElementById('generated_outline').dataset.approved='N';
 });
@@ -1334,6 +1410,7 @@ document.querySelectorAll('[data-action]').forEach(button=>{
       if(action==='apply_med_answers'){await runApplyMedAnswers(button);return;}
       if(action==='validate_article'){await runValidateArticle(button);return;}
       if(action==='revise_article'){await runReviseArticle(button);return;}
+      if(action==='transcribe_case'){await runTranscribeCase(button);return;}
 
       if(action==='download_bitrix_xml'){await downloadBitrixXml(button);return;}
       if(action==='check_internal_uniqueness'){await runInternalUniqueness(button);return;}
@@ -1680,7 +1757,7 @@ let externalPollTimer=null;function stopExternalUniquenessPoll(){if(externalPoll
 function scheduleExternalUniquenessPoll(){stopExternalUniquenessPoll();const state=APP_STATE.uniqueness.external;if(!state||!hasExternalUid(state)||!isActiveExternalStatus(state.status))return;const attempt=Number(state.attempt||0);if(attempt>=40){saveExternalUniquenessState({...state,status:'failed',message:'Проверка TEXT.RU всё ещё выполняется. Результат можно запросить повторно позднее.'});renderExternalUniqueness();return;}const delaySeconds=Math.max(5,Number(state.retry_after_seconds)||(attempt===0?10:15));externalPollTimer=setTimeout(pollExternalUniqueness,delaySeconds*1000);}
 function isTemporaryExternalError(error){const message=String(error?.message||error||'').toLowerCase();return /\b(429|502|503|504)\b/.test(message)||message.includes('timeout')||message.includes('temporar')||message.includes('времен');}
 async function pollExternalUniqueness(){const state=APP_STATE.uniqueness.external;if(!state||!hasExternalUid(state)||!isActiveExternalStatus(state.status))return;const currentHash=await calculateExternalUniquenessHash();if(state.content_hash!==currentHash){await markExternalUniquenessOutdated();return;}try{const data=await callN8n('get_external_uniqueness',{text_uid:state.text_uid,content_hash:state.content_hash},null);if(!data||typeof data!=='object'){throw new Error('TEXT.RU вернул некорректный ответ.');}const responseUid=typeof data.text_uid==='string'&&data.text_uid.trim()?data.text_uid.trim():state.text_uid;if(data.content_hash&&data.content_hash!==currentHash){APP_STATE.uniqueness.external={...state,...data,text_uid:responseUid,status:'outdated'};sessionStorage.removeItem('temed_external_uniqueness');renderExternalUniqueness();return;}const next={...state,...data,text_uid:responseUid,content_hash:data.content_hash||state.content_hash,started_at:state.started_at,attempt:Number(state.attempt||0)+1,status:data.status||'processing'};saveExternalUniquenessState(next);renderExternalUniqueness();if(next.status==='completed'){stopExternalUniquenessPoll();logAction('Проверка TEXT.RU завершена',{text_uid:next.text_uid,uniqueness_percent:next.uniqueness_percent});}else if(isActiveExternalStatus(next.status)){scheduleExternalUniquenessPoll();}else{stopExternalUniquenessPoll();}}catch(e){if(isTemporaryExternalError(e)&&Number(state.attempt||0)<40){saveExternalUniquenessState({...state,attempt:Number(state.attempt||0)+1,retry_after_seconds:Math.max(15,Number(state.retry_after_seconds||0)||15),message:String(e.message||e)});renderExternalUniqueness();scheduleExternalUniquenessPoll();return;}saveExternalUniquenessState({...state,status:'failed',message:String(e.message||e)});stopExternalUniquenessPoll();renderExternalUniqueness();}}
-function collectAssistantContext(){return {mode:APP_STATE.assistant.mode,message:fieldValue('assistant_input'),current_step:Number(document.querySelector('.step.on')?.dataset.step||0),article_context:{workflow_mode:fieldValue('workflow_mode'),task_name:fieldValue('task_name'),topic:fieldValue('topic'),primary_query:fieldValue('primary_query'),secondary_queries:fieldValue('secondary_queries'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),article_type:fieldValue('article_type'),region:fieldValue('region'),reader_goal:fieldValue('reader_goal'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),clinic_id:fieldValue('clinic_id'),service_id:fieldValue('service_id'),related_articles:[],generated_outline:fieldValue('generated_outline').slice(0,100000),article:currentArticleObject(),uniqueness:APP_STATE.uniqueness},empty_required_fields:[],conversation:APP_STATE.assistant.messages.slice(-20)}}
+function collectAssistantContext(){return {mode:APP_STATE.assistant.mode,message:fieldValue('assistant_input'),current_step:Number(document.querySelector('.step.on')?.dataset.step||0),article_context:{workflow_mode:fieldValue('workflow_mode'),task_name:fieldValue('task_name'),topic:fieldValue('topic'),primary_query:fieldValue('primary_query'),secondary_queries:fieldValue('secondary_queries'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),article_type:fieldValue('article_type'),region:fieldValue('region'),reader_goal:fieldValue('reader_goal'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),case_transcript:fieldValue('case_transcript'),clinic_id:fieldValue('clinic_id'),service_id:fieldValue('service_id'),related_articles:[],generated_outline:fieldValue('generated_outline').slice(0,100000),article:currentArticleObject(),uniqueness:APP_STATE.uniqueness},empty_required_fields:[],conversation:APP_STATE.assistant.messages.slice(-20)}}
 function renderAssistantMessage(role,text){const list=document.getElementById('assistant_messages');if(!list)return;const div=document.createElement('div');div.className='assistant-message '+role;div.textContent=text;list.appendChild(div);list.scrollTop=list.scrollHeight;}
 function renderAssistantSources(sources){const box=document.getElementById('assistant_sources');if(!box)return;box.textContent='';(sources||[]).forEach(src=>{const chip=document.createElement('span');chip.className='source-chip';chip.textContent=[src.type,src.path||src.action,src.section].filter(Boolean).join(' · ');box.appendChild(chip);});}
 function renderAssistantSuggestions(items){const box=document.getElementById('assistant_suggestions');if(!box)return;box.textContent='';(items||[]).forEach(s=>{const card=document.createElement('div');card.className='suggestion-card';const text=document.createElement('div');text.textContent=`Поле: ${s.field_id}. Предлагается: ${s.label||s.value}. Причина: ${s.reason||''}`;const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Применить';btn.addEventListener('click',()=>applyAssistantSuggestion(s));card.append(text,btn);box.appendChild(card);});}

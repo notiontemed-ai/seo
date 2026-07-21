@@ -258,6 +258,26 @@
           <div class="hint sys">Используется как приоритетный внутренний источник — смысл не меняется при генерации.</div>
         </div>
       </div>
+      <div class="card">
+        <h3>Кейс врача (аудио)</h3>
+        <div class="row2">
+          <div class="field">
+            <label for="case_audio">Аудиозапись кейса</label>
+            <input type="file" id="case_audio" accept="audio/*">
+            <div class="hint sys">Голосовой кейс врача. Файл не сохраняется — в редактор возвращается только расшифровка. Максимум 25 МБ.</div>
+          </div>
+          <div class="field">
+            <label>&nbsp;</label>
+            <button type="button" class="btn" id="case_audio_transcribe" data-action="transcribe_case">Транскрибировать</button>
+            <div class="hint" id="case_audio_status" role="status" aria-live="polite"></div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="case_transcript">Расшифровка кейса</label>
+          <textarea id="case_transcript" name="case_transcript" rows="8" placeholder="Здесь появится расшифровка аудиокейса. Текст можно редактировать; повторная транскрибация дописывается ниже."></textarea>
+          <div class="hint sys">Расшифровка передаётся генератору статьи как внутренний материал врача.</div>
+        </div>
+      </div>
       <div class="stepnav"><button type="button" class="btn" data-nav="prev">← Назад</button><button type="button" class="btn primary" data-nav="next">Далее: контекст TEMED →</button></div>
     </section>
 
