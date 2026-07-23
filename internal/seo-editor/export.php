@@ -37,8 +37,8 @@ if ($missing) jsonError(422, 'Не удалось сформировать XML: 
 $exporter = new BitrixArticleXmlExporter();
 try {
     $doc = $exporter->export($payload);
-} catch (RuntimeException $e) {
-    jsonError(500, $e->getMessage(), ['paths'=>$exporter->templatePaths()]);
+} catch (Throwable $e) {
+    jsonError(500, 'Не удалось сформировать XML.', ['reason' => $e->getMessage()]);
 }
 $problems = $exporter->validate($doc);
 if ($problems) jsonError(500, 'Сформированный XML неполный: отсутствуют обязательные узлы.', ['missing'=>$problems]);
