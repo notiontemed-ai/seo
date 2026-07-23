@@ -922,10 +922,10 @@ function selectedStructureConfig(){
   return item&&item.raw?item.raw:null;
 }
 
-function actionPayload(){
+function actionPayload(options={}){
   const brief=buildBrief();
-
-  return {
+  const includeValidationContext=options.includeValidationContext!==false;
+  const payload={
     ...brief,
     brief,
     structure_config:selectedStructureConfig(),
@@ -933,9 +933,22 @@ function actionPayload(){
     generated_outline:document.getElementById('generated_outline').value.trim(),
     article:currentArticleObject(),
     med_questions:document.getElementById('med_questions').value.trim(),
-    med_answers:document.getElementById('med_answers').value.trim(),
-    validation_report:document.getElementById('validation_report').value.trim(),
-    revision_request:document.getElementById('revision_request').value.trim()
+    med_answers:document.getElementById('med_answers').value.trim()
+  };
+
+  if(includeValidationContext){
+    payload.validation_report=document.getElementById('validation_report').value.trim();
+    payload.revision_request=document.getElementById('revision_request').value.trim();
+  }
+
+  return payload;
+}
+
+function validateArticlePayload(article){
+  const payload=actionPayload({includeValidationContext:false});
+  return {
+    ...payload,
+    article
   };
 }
 
@@ -1021,6 +1034,7 @@ function valueToText(value){
 function setArticleResult(article){
   if(!article||typeof article!=='object')return;
 
+  invalidateArticleValidation('article_result_changed');
   document.getElementById('result_name').value=article.name||'';
   document.getElementById('result_code').value=article.code||'';
   document.getElementById('result_seo_title').value=article.seo_title||'';
@@ -1170,7 +1184,21 @@ async function runValidateArticle(button){
     return;
   }
 
-  const data=await callN8n('validate_article',actionPayload(),button);
+  const detailHash=await browserHash(article.detail_html);
+  clearArticleValidationReport();
+  APP_STATE.validation={...(APP_STATE.validation||{}),status:'running',detail_hash:'',sent_hash:detailHash};
+  const payload=validateArticlePayload(article);
+  const data=await callN8n('validate_article',payload,button);
+  const latestArticle=currentArticleObject();
+  const latestHash=await browserHash(latestArticle.detail_html);
+  if(latestHash!==detailHash){
+    APP_STATE.validation={...(APP_STATE.validation||{}),status:'outdated',detail_hash:'',sent_hash:detailHash};
+    clearArticleValidationReport();
+    document.getElementById('side_status').textContent='проверка устарела';
+    logAction('Результат проверки статьи устарел до отображения',{sent_hash:detailHash,current_hash:latestHash,detail_html_chars:article.detail_html.length});
+    return;
+  }
+
   document.getElementById('validation_report').value=
     data.report_text
       ? data.report_text+'\n\n'+JSON.stringify(data,null,2)
@@ -1184,7 +1212,9 @@ async function runValidateArticle(button){
   (Array.isArray(data.warnings)?data.warnings:[]).forEach(w=>items.push({raw:w,severity:'warning'}));
   const headline=data.passed?'Готово: статья прошла проверку.':'Проверка выявила замечания.';
   renderResultReport('validation_report_cards',buildResultReport(headline,items));
+  APP_STATE.validation={...(APP_STATE.validation||{}),status:'current',detail_hash:detailHash,sent_hash:detailHash,validated_at:new Date().toISOString()};
 
+  logAction('Проверка статьи привязана к версии текста',{sent_hash:detailHash,detail_html_chars:article.detail_html.length,errors:Array.isArray(data.errors)?data.errors.length:0,warnings:Array.isArray(data.warnings)?data.warnings.length:0});
   document.getElementById('side_status').textContent=
     data.passed?'проверка пройдена':'есть замечания';
 }
@@ -1302,6 +1332,7 @@ async function loadExistingArticle(button){
     setRelationMap(RELATED_SERVICES,propertyValues(item,'RELATED_SERVICES').map(id=>({element_id:id,iblock_id:70})),70,APP_DATA.services);renderSelectedServices();
     setRelationMap(RELATED_CLINICS,propertyValues(item,'RELATED_CLINICS').map(id=>({element_id:id,iblock_id:10})),10,APP_DATA.clinics);renderSelectedClinics();
 
+    invalidateArticleValidation('existing_article_loaded');
     logAction('Загружена существующая статья',{
       id,
       source,
@@ -1701,6 +1732,7 @@ function buildExternalTask(){
 function loadExternalText(){
   const t=document.getElementById('external_generated_text').value.trim();
   if(!t){alert('Поле пустое: вставьте текст, полученный от внешнего ассистента.');return;}
+  invalidateArticleValidation('external_text_loaded');
   document.getElementById('result_detail_html').value=t;
   document.getElementById('side_status').textContent='текст загружен (внешний ассистент)';
   logAction('Текст внешнего ассистента загружен в результат',{chars:t.length});
@@ -1942,6 +1974,17 @@ function buildResultReport(headline,items){
 }
 function unlockCriticalGate(target){const b=typeof target==='string'?document.querySelector(target):target;if(b&&b.dataset&&b.dataset.criticalLocked){delete b.dataset.criticalLocked;b.disabled=false;b.removeAttribute('aria-disabled');}}
 function clearResultReport(container){const el=typeof container==='string'?document.getElementById(container):container;if(el){el.classList.remove('result-report');el.textContent='';}}
+function clearArticleValidationReport(){
+  const field=document.getElementById('validation_report');
+  if(field)field.value='';
+  clearResultReport('validation_report_cards');
+}
+function invalidateArticleValidation(reason='article_changed'){
+  clearArticleValidationReport();
+  APP_STATE.validation={...(APP_STATE.validation||{}),status:'outdated',detail_hash:'',sent_hash:'',outdated_at:new Date().toISOString(),outdated_reason:reason};
+  const status=document.getElementById('side_status');
+  if(status)status.textContent='проверка устарела';
+}
 function renderResultReport(container,report,options){
   const el=typeof container==='string'?document.getElementById(container):container;
   if(!el)return report;
@@ -2049,9 +2092,9 @@ async function validateExternalLayoutResult(){
   return parsed;
 }
 function nonEmpty(v){return Array.isArray(v)?v.length>0:String(v??'').trim().length>0;}
-async function applyExternalLayoutResult(){let parsed=APP_STATE.layout.parsed_result;if(!parsed){parsed=await validateExternalLayoutResult();}const raw=fieldValue('external_layout_result');const inputHash=await browserHash(raw);if(!parsed.input_hash||parsed.input_hash!==inputHash){alert('Поле результата изменилось после проверки. Проверьте результат повторно.');return;}if(!parsed.valid){alert('Нельзя применить результат: есть ошибки проверки.');return;}const resultHash=await browserHash(JSON.stringify(parsed.article));if(APP_STATE.layout.applied_result_hash===resultHash&&!confirm('Этот результат вёрстки уже применён. Применить повторно?'))return;const currentSourceHash=await calculateLayoutSourceHash();if(parsed.source_hash&&currentSourceHash&&parsed.source_hash!==currentSourceHash&&!confirm('source_hash результата не совпадает с текущей итоговой статьёй. Возможно, результат устарел. Всё равно применить?'))return;if(parsed.source_hash&&APP_STATE.layout.source_hash&&parsed.source_hash!==APP_STATE.layout.source_hash&&!confirm('source_hash результата не совпадает с последним заданием. Всё равно применить?'))return;if(!parsed.source_hash&&!confirm('source_hash отсутствует, результат нельзя однозначно связать с последним заданием. Всё равно применить?'))return;if(parsed.fallback_html&&!confirm('Результат распознан как чистый HTML, а не JSON. Всё равно применить?'))return;const oldHtml=fieldValue('result_detail_html');if(!confirm('Применить результат вёрстки?\n\nСтарый HTML: '+oldHtml.length+' символов.\nНовый HTML: '+parsed.article.detail_html.length+' символов.'))return;APP_STATE.layout.previous_article={result_name:fieldValue('result_name'),result_code:fieldValue('result_code'),result_seo_title:fieldValue('result_seo_title'),result_meta_description:fieldValue('result_meta_description'),result_preview:fieldValue('result_preview'),result_short_answer:fieldValue('result_short_answer'),result_detail_html:oldHtml,result_sources:fieldValue('result_sources'),result_related_articles:fieldValue('result_related_articles')};setFieldValue('result_detail_html',parsed.article.detail_html);const map={name:'result_name',code:'result_code',seo_title:'result_seo_title',meta_description:'result_meta_description',preview_text:'result_preview',short_answer:'result_short_answer',sources:'result_sources',related_articles:'result_related_articles'};Object.entries(map).forEach(([k,id])=>{if(nonEmpty(parsed.article[k]))setFieldValue(id,Array.isArray(parsed.article[k])?valueToText(parsed.article[k]):parsed.article[k]);});APP_STATE.layout.applied_result_hash=resultHash;await markUniquenessOutdated();setLayoutStatus(['Результат вёрстки применён.','Теперь XML будет сформирован из обновлённой версии статьи.']);logAction('Результат вёрстки применён',{task_id:parsed.task_id,source_hash:parsed.source_hash,chars:parsed.article.detail_html.length,warnings:parsed.warnings.length});}
+async function applyExternalLayoutResult(){let parsed=APP_STATE.layout.parsed_result;if(!parsed){parsed=await validateExternalLayoutResult();}const raw=fieldValue('external_layout_result');const inputHash=await browserHash(raw);if(!parsed.input_hash||parsed.input_hash!==inputHash){alert('Поле результата изменилось после проверки. Проверьте результат повторно.');return;}if(!parsed.valid){alert('Нельзя применить результат: есть ошибки проверки.');return;}const resultHash=await browserHash(JSON.stringify(parsed.article));if(APP_STATE.layout.applied_result_hash===resultHash&&!confirm('Этот результат вёрстки уже применён. Применить повторно?'))return;const currentSourceHash=await calculateLayoutSourceHash();if(parsed.source_hash&&currentSourceHash&&parsed.source_hash!==currentSourceHash&&!confirm('source_hash результата не совпадает с текущей итоговой статьёй. Возможно, результат устарел. Всё равно применить?'))return;if(parsed.source_hash&&APP_STATE.layout.source_hash&&parsed.source_hash!==APP_STATE.layout.source_hash&&!confirm('source_hash результата не совпадает с последним заданием. Всё равно применить?'))return;if(!parsed.source_hash&&!confirm('source_hash отсутствует, результат нельзя однозначно связать с последним заданием. Всё равно применить?'))return;if(parsed.fallback_html&&!confirm('Результат распознан как чистый HTML, а не JSON. Всё равно применить?'))return;const oldHtml=fieldValue('result_detail_html');if(!confirm('Применить результат вёрстки?\n\nСтарый HTML: '+oldHtml.length+' символов.\nНовый HTML: '+parsed.article.detail_html.length+' символов.'))return;APP_STATE.layout.previous_article={result_name:fieldValue('result_name'),result_code:fieldValue('result_code'),result_seo_title:fieldValue('result_seo_title'),result_meta_description:fieldValue('result_meta_description'),result_preview:fieldValue('result_preview'),result_short_answer:fieldValue('result_short_answer'),result_detail_html:oldHtml,result_sources:fieldValue('result_sources'),result_related_articles:fieldValue('result_related_articles')};invalidateArticleValidation('layout_result_applied');setFieldValue('result_detail_html',parsed.article.detail_html);const map={name:'result_name',code:'result_code',seo_title:'result_seo_title',meta_description:'result_meta_description',preview_text:'result_preview',short_answer:'result_short_answer',sources:'result_sources',related_articles:'result_related_articles'};Object.entries(map).forEach(([k,id])=>{if(nonEmpty(parsed.article[k]))setFieldValue(id,Array.isArray(parsed.article[k])?valueToText(parsed.article[k]):parsed.article[k]);});APP_STATE.layout.applied_result_hash=resultHash;await markUniquenessOutdated();setLayoutStatus(['Результат вёрстки применён.','Теперь XML будет сформирован из обновлённой версии статьи.']);logAction('Результат вёрстки применён',{task_id:parsed.task_id,source_hash:parsed.source_hash,chars:parsed.article.detail_html.length,warnings:parsed.warnings.length});}
 function clearExternalLayoutResult(){setFieldValue('external_layout_result','');APP_STATE.layout.parsed_result=null;setLayoutPreviewButtonEnabled(false);setLayoutStatus('Результат вёрстки ещё не загружен.');}
-function restorePreLayoutArticle(){const prev=APP_STATE.layout.previous_article;if(!prev){alert('Нет сохранённой версии для отката в текущей сессии.');return;}Object.entries(prev).forEach(([id,value])=>setFieldValue(id,value));markUniquenessOutdated();setLayoutStatus('Предыдущая версия статьи восстановлена. XML снова будет сформирован из восстановленной итоговой версии.');logAction('Выполнен откат применённой вёрстки',{task_id:APP_STATE.layout.task_id,source_hash:APP_STATE.layout.source_hash});}
+function restorePreLayoutArticle(){const prev=APP_STATE.layout.previous_article;if(!prev){alert('Нет сохранённой версии для отката в текущей сессии.');return;}Object.entries(prev).forEach(([id,value])=>setFieldValue(id,value));invalidateArticleValidation('pre_layout_article_restored');markUniquenessOutdated();setLayoutStatus('Предыдущая версия статьи восстановлена. XML снова будет сформирован из восстановленной итоговой версии.');logAction('Выполнен откат применённой вёрстки',{task_id:APP_STATE.layout.task_id,source_hash:APP_STATE.layout.source_hash});}
 
 
 /* ---- копирование ---- */
@@ -2074,9 +2117,10 @@ function fallbackCopy(text,done){
 
 
 /* ===================== Assistant, uniqueness and XML export ===================== */
-const APP_STATE=window.APP_STATE||{assistant:{mode:'article',sessionId:'',messages:[]},uniqueness:{internal:null,external:null},layout:{task_id:'',source_hash:'',generated_at:'',parsed_result:null,previous_article:null,applied_result_hash:'',last_input_hash:'',preview_opener:null}};
+const APP_STATE=window.APP_STATE||{assistant:{mode:'article',sessionId:'',messages:[]},uniqueness:{internal:null,external:null},layout:{task_id:'',source_hash:'',generated_at:'',parsed_result:null,previous_article:null,applied_result_hash:'',last_input_hash:'',preview_opener:null},validation:{status:'empty',detail_hash:'',sent_hash:''}};
 APP_STATE.draft=APP_STATE.draft||{draft_id:'',version_id:'',version_number:0,saved_hash:'',loaded_at:'',status:'',is_dirty:false};
 APP_STATE.layout=APP_STATE.layout||{task_id:'',source_hash:'',generated_at:'',parsed_result:null,previous_article:null,applied_result_hash:'',last_input_hash:'',preview_opener:null};
+APP_STATE.validation=APP_STATE.validation||{status:'empty',detail_hash:'',sent_hash:''};
 window.APP_STATE=APP_STATE;
 const ASSISTANT_ALLOWED_FIELDS=new Set(['topic','primary_query','secondary_queries','search_intent','article_structure','article_type','region','reader_goal','result_name','result_preview','result_short_answer','result_detail_html','revision_request']);
 function fieldValue(id){const el=document.getElementById(id);return el?el.value:'';}
@@ -2125,6 +2169,7 @@ function handleXmlMissingFields(missingFields,source){clearXmlFieldErrors();miss
 async function downloadBitrixXml(button){setButtonBusy(button,true);clearResultReport('xml_report_cards');try{const payload=bitrixXmlPayload();const clientMissing=validateXmlRequiredFields(payload);if(clientMissing.length){handleXmlMissingFields(clientMissing,'client');return;}const response=await fetch('export.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/xml, application/json'},body:JSON.stringify(payload)});const type=response.headers.get('Content-Type')||'';if(type.includes('application/json')){const err=await response.json();if(!response.ok||err.success===false){const missing=Array.isArray(err.details?.missing_fields)?err.details.missing_fields.filter(code=>XML_REQUIRED_FIELD_LABELS[code]):[];if(missing.length){handleXmlMissingFields(missing,'server');return;}throw new Error(err.message||'Ошибка формирования XML');}}else if(!response.ok){throw new Error('Ошибка HTTP '+response.status);}clearXmlFieldErrors();const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/);const filename=match?match[1]:'bitrix-article.xml';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);const warningsHeader=response.headers.get('X-TEMED-XML-Warnings')||'';let xmlWarnings=[];if(warningsHeader){try{const parsed=JSON.parse(decodeURIComponent(warningsHeader));if(Array.isArray(parsed))xmlWarnings=parsed.filter(w=>typeof w==='string'&&w.trim()!=='');}catch(e){}}if(xmlWarnings.length){logAction('XML сформирован с предупреждениями',{warnings:xmlWarnings});}renderResultReport('xml_report_cards',buildResultReport('Готово: XML сформирован.',xmlWarnings.map(w=>({raw:w,severity:'warning'}))));setFieldValue('save_result',`XML сформирован: ${filename}
 Статус статьи в XML: неактивна`);logAction('XML сформирован',{filename});}catch(e){const message=String(e.message||e||'Ошибка формирования XML');setFieldValue('save_result',message);logAction('XML не сформирован',{error:message});alert(message);}finally{setButtonBusy(button,false);}}
 ['result_name','result_preview','result_short_answer','result_detail_html'].forEach(id=>document.getElementById(id)?.addEventListener('input',markUniquenessOutdated));
+document.getElementById('result_detail_html')?.addEventListener('input',()=>invalidateArticleValidation('result_detail_html_input'));
 ['result_name','result_code','result_detail_html','primary_query','article_type','author_search','medical_reviewer_search','article_section_id','new_article_section'].forEach(id=>{const el=document.getElementById(id);['input','change'].forEach(eventName=>el?.addEventListener(eventName,()=>{el.classList.remove('xml-field-error');}));});
 intentCards?.addEventListener('click',()=>intentCards.classList.remove('xml-field-error'));
 structCards?.addEventListener('click',()=>structCards.classList.remove('xml-field-error'));
