@@ -1031,6 +1031,77 @@ function valueToText(value){
   return JSON.stringify(value,null,2);
 }
 
+
+const ARTICLE_FIELD_IDS={
+  name:'result_name',
+  code:'result_code',
+  seo_title:'result_seo_title',
+  meta_description:'result_meta_description',
+  preview_text:'result_preview',
+  short_answer:'result_short_answer',
+  detail_html:'result_detail_html',
+  sources:'result_sources',
+  related_articles:'result_related_articles'
+};
+const ARTICLE_EXPECTED_FIELDS=new Set([...Object.keys(ARTICLE_FIELD_IDS),'preview','html','title','medical_review_questions']);
+function cleanMarkdownJsonBlock(text){
+  return String(text||'').trim()
+    .replace(/^```(?:json)?\s*/i,'')
+    .replace(/```$/,'')
+    .trim();
+}
+function parseJsonObjectLenient(rawValue){
+  if(rawValue&&typeof rawValue==='object')return rawValue;
+  if(typeof rawValue!=='string')return null;
+  const text=cleanMarkdownJsonBlock(rawValue);
+  if(!text)return null;
+  try{return JSON.parse(text);}catch(_){/* try embedded object below */}
+  const first=text.indexOf('{');
+  const last=text.lastIndexOf('}');
+  if(first!==-1&&last>first){
+    try{return JSON.parse(text.slice(first,last+1));}catch(_){return null;}
+  }
+  return null;
+}
+function normalizeArticleObject(candidate){
+  if(!candidate||typeof candidate!=='object'||Array.isArray(candidate))return null;
+  const hasExpected=Object.keys(candidate).some(key=>ARTICLE_EXPECTED_FIELDS.has(key));
+  const hasHtml=nonEmpty(candidate.detail_html)||nonEmpty(candidate.html);
+  if(!hasExpected||!hasHtml)return null;
+  return {
+    ...candidate,
+    name:nonEmpty(candidate.name)?candidate.name:(candidate.title||''),
+    preview_text:candidate.preview_text??candidate.preview??'',
+    detail_html:candidate.detail_html??candidate.html??'',
+    sources:Array.isArray(candidate.sources)?candidate.sources:[],
+    related_articles:Array.isArray(candidate.related_articles)?candidate.related_articles:[]
+  };
+}
+function parseArticlePayload(rawValue){
+  try{
+    const payload=parseJsonObjectLenient(rawValue);
+    if(!payload)return null;
+    return normalizeArticleObject(payload)
+      || normalizeArticleObject(payload.article)
+      || normalizeArticleObject(payload.data?.article)
+      || normalizeArticleObject(payload.data)
+      || null;
+  }catch(_){
+    return null;
+  }
+}
+function logArticlePayloadLoaded(source,article,extra={}){
+  const fields=Object.keys(ARTICLE_FIELD_IDS).filter(key=>nonEmpty(article?.[key])||(Array.isArray(article?.[key])&&article[key].length>0));
+  logAction('Загружен JSON статьи',{
+    source,
+    fields,
+    detail_html_length:String(article?.detail_html||'').length,
+    has_sources:Array.isArray(article?.sources)&&article.sources.length>0,
+    has_medical_review_questions:Array.isArray(article?.medical_review_questions)&&article.medical_review_questions.length>0,
+    ...extra
+  });
+}
+
 function setArticleResult(article){
   if(!article||typeof article!=='object')return;
 
@@ -1732,10 +1803,21 @@ function buildExternalTask(){
 function loadExternalText(){
   const t=document.getElementById('external_generated_text').value.trim();
   if(!t){alert('Поле пустое: вставьте текст, полученный от внешнего ассистента.');return;}
+  const article=parseArticlePayload(t);
   invalidateArticleValidation('external_text_loaded');
-  document.getElementById('result_detail_html').value=t;
-  document.getElementById('side_status').textContent='текст загружен (внешний ассистент)';
-  logAction('Текст внешнего ассистента загружен в результат',{chars:t.length});
+  if(article){
+    setArticleResult(article);
+    if(Array.isArray(article.medical_review_questions)&&article.medical_review_questions.length){
+      document.getElementById('med_questions').value=questionsToText({questions:article.medical_review_questions});
+    }
+    document.getElementById('side_status').textContent='JSON статьи загружен (внешний ассистент)';
+    logArticlePayloadLoaded('external_text',article,{input_chars:t.length});
+  }else{
+    document.getElementById('result_detail_html').value=t;
+    document.getElementById('side_status').textContent='текст загружен (внешний ассистент)';
+    logAction('Текст внешнего ассистента загружен в результат',{chars:t.length});
+  }
+  markUniquenessOutdated();
   goto(5);
 }
 
@@ -2227,14 +2309,77 @@ function migrateSnapshotStep(snapshot){
   if(snapshot.schema_version==='1.1') return raw; // новые снимки уже в новой нумерации
   return OLD_TO_NEW_STEP[raw]!==undefined?OLD_TO_NEW_STEP[raw]:0;
 }
+function cloneDraftSnapshot(snapshot){
+  try{return JSON.parse(JSON.stringify(snapshot||{}));}catch(_){return {...(snapshot||{})};}
+}
+function normalizeDraftSnapshot(snapshot){
+  const normalized=cloneDraftSnapshot(snapshot);
+  normalized.fields={...(normalized.fields||{})};
+  normalized.article={...(normalized.article||{})};
+  const version=String(normalized.schema_version||'1.0').trim();
+  normalized.schema_version=version;
+  const restored=[];
+  const currentArticle={};
+  Object.entries(ARTICLE_FIELD_IDS).forEach(([articleKey,fieldId])=>{
+    if(nonEmpty(normalized.article[articleKey])) currentArticle[articleKey]=normalized.article[articleKey];
+    else if(nonEmpty(normalized.fields[fieldId])) currentArticle[articleKey]=normalized.fields[fieldId];
+  });
+  let embeddedArticle=null;
+  let embeddedSource='';
+  for(const [source,value] of [['article.detail_html',normalized.article.detail_html],['fields.result_detail_html',normalized.fields.result_detail_html]]){
+    const parsed=parseArticlePayload(value);
+    if(parsed){embeddedArticle=parsed;embeddedSource=source;break;}
+    if(typeof value==='string'&&cleanMarkdownJsonBlock(value).startsWith('{')){
+      logAction('Предупреждение: JSON статьи в черновике не распознан',{
+        source:'draft_migration',
+        field:source,
+        chars:value.length
+      });
+    }
+  }
+  if(embeddedArticle){
+    Object.entries(ARTICLE_FIELD_IDS).forEach(([articleKey,fieldId])=>{
+      if(articleKey==='detail_html'){
+        currentArticle.detail_html=embeddedArticle.detail_html||'';
+        restored.push(articleKey);
+        return;
+      }
+      if(!nonEmpty(currentArticle[articleKey])&&nonEmpty(embeddedArticle[articleKey])){
+        currentArticle[articleKey]=embeddedArticle[articleKey];
+        restored.push(articleKey);
+      }
+    });
+    if(!nonEmpty(currentArticle.sources))currentArticle.sources=embeddedArticle.sources||[];
+    if(!nonEmpty(currentArticle.related_articles))currentArticle.related_articles=embeddedArticle.related_articles||[];
+  }
+  Object.entries(ARTICLE_FIELD_IDS).forEach(([articleKey,fieldId])=>{
+    const value=currentArticle[articleKey];
+    if(value!==undefined){
+      normalized.article[articleKey]=value;
+      normalized.fields[fieldId]=Array.isArray(value)?valueToText(value):value;
+    }
+  });
+  normalized.__migration_log={
+    schema_version:version,
+    embedded_json_found:!!embeddedArticle,
+    embedded_json_source:embeddedSource,
+    restored_fields:[...new Set(restored)],
+    converted_legacy_format:!!embeddedArticle
+  };
+  return normalized;
+}
 function applyDraftSnapshot(snapshot){
-  if(!snapshot||!['1.0','1.1'].includes(snapshot.schema_version)) throw new Error('SNAPSHOT_UNSUPPORTED_VERSION');
-  Object.entries(snapshot.fields||{}).forEach(([key,value])=>setFieldValue(key,value));
-  Object.entries(snapshot.article||{}).forEach(([key,value])=>setFieldValue('result_'+key,value));
-  setFieldValue('med_questions',snapshot.medical_review?.questions||'');setFieldValue('med_answers',snapshot.medical_review?.answers||'');setFieldValue('validation_report',snapshot.validation?.report||'');setFieldValue('revision_request',snapshot.validation?.revision_request||'');
-  APP_STATE.layout={...APP_STATE.layout,...(snapshot.layout||{})};
-  APP_STATE.uniqueness.internal=snapshot.uniqueness?.internal||null;APP_STATE.uniqueness.external=snapshot.uniqueness?.external||null;
-  const step=migrateSnapshotStep(snapshot);
+  if(!snapshot||!['1.0','1.1'].includes(String(snapshot.schema_version||'1.0').trim())) throw new Error('SNAPSHOT_UNSUPPORTED_VERSION');
+  const normalized=normalizeDraftSnapshot(snapshot);
+  Object.entries(normalized.fields||{}).forEach(([key,value])=>{
+    if(!Object.values(ARTICLE_FIELD_IDS).includes(key))setFieldValue(key,value);
+  });
+  setArticleResult(normalized.article||{});
+  setFieldValue('med_questions',normalized.medical_review?.questions||'');setFieldValue('med_answers',normalized.medical_review?.answers||'');setFieldValue('validation_report',normalized.validation?.report||'');setFieldValue('revision_request',normalized.validation?.revision_request||'');
+  APP_STATE.layout={...APP_STATE.layout,...(normalized.layout||{})};
+  APP_STATE.uniqueness.internal=normalized.uniqueness?.internal||null;APP_STATE.uniqueness.external=normalized.uniqueness?.external||null;
+  logAction('Миграция черновика выполнена',normalized.__migration_log);
+  const step=migrateSnapshotStep(normalized);
   if(typeof showStep==='function') showStep(step);
   if(typeof window.refreshCardIndicators==='function') window.refreshCardIndicators();
   if(typeof refreshCaseMaterialButton==='function') refreshCaseMaterialButton();
