@@ -8,6 +8,7 @@ final class BitrixArticleXmlExporter
     private const CLASSIFIER_NAME = 'Медицинские статьи';
     private const CATALOG_ID = '81';
     private const CATALOG_DESCRIPTION = '/articles2/#ELEMENT_CODE#/';
+    private const CATALOG_CODE = 'medical_articles_v2';
 
     private const STANDARD_FIELD_SCHEMA = [
         'CML2_ACTIVE' => [
@@ -79,6 +80,7 @@ final class BitrixArticleXmlExporter
         $this->warnings = [];
         $this->filledProperties = 0;
         $normalized = $this->normalizePayload($payload);
+        $this->assertValidPayload($normalized);
 
         $doc = new DOMDocument('1.0', 'UTF-8');
         $doc->formatOutput = true;
@@ -118,15 +120,26 @@ final class BitrixArticleXmlExporter
 
         if (trim((string)$xp->evaluate('string(//Каталог/Ид)')) !== self::CATALOG_ID) $missing[] = 'В сформированном XML неверный Каталог/Ид.';
         if (trim((string)$xp->evaluate('string(//Каталог/ИдКлассификатора)')) !== self::CLASSIFIER_ID) $missing[] = 'В сформированном XML неверный Каталог/ИдКлассификатора.';
+        if (trim((string)$xp->evaluate('string(//Каталог/БитриксКод)')) !== self::CATALOG_CODE) $missing[] = 'В XML отсутствует БитриксКод каталога';
         if ($xp->query('//Товар')->length === 0) $missing[] = 'В сформированном XML отсутствует Товар.';
         foreach (['Ид', 'Наименование'] as $tag) if (trim((string)$xp->evaluate('string(//Товар/' . $tag . ')')) === '') $missing[] = 'В сформированном XML пустой Товар/' . $tag . '.';
-        if (trim((string)$xp->evaluate('string(//Товар/Группы/Ид)')) === '') $missing[] = 'В сформированном XML пустой Товар/Группы/Ид.';
+        $productGroupId = trim((string)$xp->evaluate('string(//Товар/Группы/Ид)'));
+        if ($productGroupId === '') $missing[] = 'В сформированном XML пустой Товар/Группы/Ид.';
+        $classifierGroupId = trim((string)$xp->evaluate('string(//Классификатор/Группы/Группа/Ид)'));
+        $classifierGroupName = trim((string)$xp->evaluate('string(//Классификатор/Группы/Группа/Наименование)'));
+        $classifierGroupCode = trim((string)$xp->evaluate('string(//Классификатор/Группы/Группа/БитриксКод)'));
+        if ($classifierGroupId === '') $missing[] = 'В сформированном XML отсутствует Ид раздела.';
+        if ($classifierGroupName === '' || (preg_match('/^\d+$/', $classifierGroupId) && $classifierGroupName === $classifierGroupId)) $missing[] = 'В XML не получено название выбранного раздела ' . ($classifierGroupId ?: $productGroupId);
+        if ($classifierGroupCode === '') $missing[] = 'В XML отсутствует БитриксКод раздела ' . ($classifierGroupId ?: $productGroupId);
+        elseif (preg_match('/^\d+$/', $classifierGroupCode)) $missing[] = 'В XML БитриксКод раздела ' . ($classifierGroupId ?: $productGroupId) . ' не должен быть числом';
+        foreach (['БитриксАктивность','БитриксСортировка'] as $tag) if (trim((string)$xp->evaluate('string(//Классификатор/Группы/Группа/' . $tag . ')')) === '') $missing[] = 'В XML отсутствует ' . $tag . ' раздела ' . ($classifierGroupId ?: $productGroupId);
+        if ($classifierGroupId !== '' && $productGroupId !== '' && $classifierGroupId !== $productGroupId) $missing[] = 'В XML Ид раздела классификатора не совпадает с Товар/Группы/Ид.';
 
         if ($xp->query('//Товар/ЗначениеРеквизита[starts-with(Наименование, "CML2_")]')->length > 0) $missing[] = 'В сформированном XML стандартные поля CML2 ошибочно выгружены как ЗначениеРеквизита.';
 
         $codeValue = trim((string)$xp->evaluate('string(//Товар/ЗначенияСвойств/ЗначенияСвойства[Ид="CML2_CODE"]/Значение)'));
         $productCode = preg_replace('/^medical-article-(.*)-\d{8}$/', '$1', trim((string)$xp->evaluate('string(//Товар/Ид)')));
-        if ($codeValue === '') $missing[] = 'В сформированном XML пустой CML2_CODE товара.';
+        if ($codeValue === '') $missing[] = 'В XML отсутствует CML2_CODE статьи';
         elseif ($productCode !== '' && $codeValue !== $productCode) $missing[] = 'В сформированном XML CML2_CODE товара не совпадает с нормализованным кодом статьи.';
         foreach (['CML2_ACTIVE', 'CML2_SORT', 'CML2_PREVIEW_TEXT', 'CML2_DETAIL_TEXT'] as $code) {
             if ($xp->query('//Товар/ЗначенияСвойств/ЗначенияСвойства[Ид="' . $code . '"]')->length === 0) $missing[] = 'В сформированном XML отсутствует стандартное поле товара ' . $code . '.';
@@ -161,7 +174,13 @@ final class BitrixArticleXmlExporter
         $groups = $classifier->appendChild($doc->createElement('Группы'));
         $group = $groups->appendChild($doc->createElement('Группа'));
         $group->appendChild($doc->createElement('Ид', $p['section']));
-        $group->appendChild($doc->createElement('Наименование'))->appendChild($doc->createTextNode($p['section_name'] ?: $p['section']));
+        $group->appendChild($doc->createElement('Наименование'))->appendChild($doc->createTextNode($p['section_name']));
+        $group->appendChild($doc->createElement('БитриксАктивность', $p['section_active']));
+        $group->appendChild($doc->createElement('БитриксСортировка', (string)$p['section_sort']));
+        $group->appendChild($doc->createElement('БитриксКод'))->appendChild($doc->createTextNode($p['section_code']));
+        $group->appendChild($doc->createElement('БитриксКартинка'));
+        $group->appendChild($doc->createElement('БитриксКартинкаДетальная'));
+        $group->appendChild($doc->createElement('Группы'));
         return $classifier;
     }
 
@@ -200,6 +219,13 @@ final class BitrixArticleXmlExporter
         $catalog->appendChild($doc->createElement('ИдКлассификатора', self::CLASSIFIER_ID));
         $catalog->appendChild($doc->createElement('Наименование', self::CLASSIFIER_NAME));
         $catalog->appendChild($doc->createElement('Описание', self::CATALOG_DESCRIPTION));
+        $catalog->appendChild($doc->createElement('БитриксКод', self::CATALOG_CODE));
+        $catalog->appendChild($doc->createElement('БитриксСимвольныйКодAPI'));
+        $catalog->appendChild($doc->createElement('БитриксСортировка', '500'));
+        $catalog->appendChild($doc->createElement('БитриксURLСписок', '#SITE_DIR#/articles2/'));
+        $catalog->appendChild($doc->createElement('БитриксURLДеталь', '#SITE_DIR#/articles2/#ELEMENT_CODE#/'));
+        $catalog->appendChild($doc->createElement('БитриксURLРаздел', '#SITE_DIR#/articles2/category/#SECTION_CODE#/'));
+        $catalog->appendChild($doc->createElement('БитриксURLКанонический', 'https://temed.ru/articles2/#ELEMENT_CODE#/'));
         $goods = $catalog->appendChild($doc->createElement('Товары'));
         $goods->appendChild($this->createProduct($doc, $p));
         return $catalog;
@@ -216,13 +242,19 @@ final class BitrixArticleXmlExporter
             $showForm = $formId !== '' ? 'Y' : 'N';
         }
         $formButtonText = trim((string)($payload['form_button_text'] ?? ''));
+        $sectionActiveRaw = strtoupper(trim((string)($payload['section_active'] ?? 'Y')));
+        $sectionActive = in_array($sectionActiveRaw, ['Y', 'TRUE', '1'], true) ? 'true' : 'false';
         return [
-            'code' => (string)($payload['code'] ?? $payload['result_code'] ?? ''),
-            'name' => (string)($payload['name'] ?? $payload['result_name'] ?? ''),
-            'preview' => (string)($payload['preview_text'] ?? $payload['result_preview'] ?? ''),
+            'code' => trim((string)($payload['code'] ?? $payload['result_code'] ?? '')),
+            'name' => trim((string)($payload['name'] ?? $payload['result_name'] ?? '')),
+            'preview' => trim((string)($payload['preview_text'] ?? $payload['result_preview'] ?? '')),
             'detail' => $this->sanitizeHtml((string)($payload['detail_html'] ?? $payload['result_detail_html'] ?? '')),
-            'section' => (string)($payload['section'] ?? $payload['article_section_id'] ?? ''),
-            'section_name' => (string)($payload['section_name'] ?? $payload['article_section'] ?? ''),
+            'section' => trim((string)($payload['section'] ?? $payload['article_section_id'] ?? '')),
+            'section_name' => trim((string)($payload['section_name'] ?? $payload['article_section'] ?? '')),
+            'section_code' => trim((string)($payload['section_code'] ?? $payload['article_section_code'] ?? '')),
+            'section_active' => $sectionActive,
+            'section_sort' => max(1, (int)($payload['section_sort'] ?? 500) ?: 500),
+            'section_parent_id' => (int)($payload['section_parent_id'] ?? 0),
             'primary_query' => (string)($payload['primary_query'] ?? ''),
             'secondary_queries' => $this->list($payload['secondary_queries'] ?? []),
             'search_intent' => (string)($payload['search_intent_xml_id'] ?? $payload['search_intent'] ?? ''),
@@ -247,6 +279,23 @@ final class BitrixArticleXmlExporter
             'form_id' => $formId,
             'form_button_text' => $formButtonText,
         ];
+    }
+
+
+    private function assertValidPayload(array $p): void
+    {
+        if (trim($p['code']) === '') {
+            throw new InvalidArgumentException('Не заполнен символьный код статьи');
+        }
+        if (trim($p['section']) === '') {
+            throw new InvalidArgumentException('Не выбран раздел статьи');
+        }
+        if (trim($p['section_name']) === '' || (preg_match('/^\d+$/', $p['section']) && $p['section_name'] === $p['section'])) {
+            throw new InvalidArgumentException('Не получено название выбранного раздела');
+        }
+        if (trim($p['section_code']) === '' || preg_match('/^\d+$/', $p['section_code']) || !preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/', $p['section_code'])) {
+            throw new InvalidArgumentException('Не заполнен или некорректен символьный код раздела');
+        }
     }
 
     private function createProduct(DOMDocument $doc, array $p): DOMElement
