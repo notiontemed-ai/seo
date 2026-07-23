@@ -4,120 +4,90 @@ declare(strict_types=1);
 
 final class BitrixArticleXmlExporter
 {
-    private const PROPERTY_IDS = [
-        'ARTICLE_TYPE' => '847', 'PRIMARY_QUERY' => '848', 'SECONDARY_QUERIES' => '849',
-        'SEARCH_INTENT' => '850', 'SHORT_ANSWER' => '851', 'REGION' => '852',
-        'AUTHOR' => '853', 'MEDICAL_REVIEWER' => '854', 'MEDICAL_REVIEWED_AT' => '855',
-        'CONTENT_UPDATED_AT' => '856', 'SOURCES' => '857', 'RELATED_ARTICLES' => '858',
-        'ARTICLE_TEMPLATE' => '864', 'ARTICLE_STRUCTURE' => '865', 'ARTICLE_STRUCTURE_NAME' => '866',
-        'ARTICLE_STRUCTURE_VERSION' => '867', 'RELATED_ARTICLES_V2' => '868',
-        'RELATED_SERVICES' => '869', 'RELATED_CLINICS' => '870', 'FEATURED_IMAGE_ALT' => '871',
-        'SHOW_FORM' => '884', 'FORM_ID' => '885', 'FORM_BUTTON_TEXT' => '886',
+    private const CLASSIFIER_ID = 'medical_articles_v2';
+    private const CLASSIFIER_NAME = 'Медицинские статьи';
+    private const CATALOG_ID = '81';
+    private const CATALOG_DESCRIPTION = '/articles2/#ELEMENT_CODE#/';
+
+    private const PROPERTY_SCHEMA = [
+        'ARTICLE_TYPE' => ['id' => '847', 'type' => 'Справочник', 'values' => ['disease' => 'Заболевание', 'symptom' => 'Симптом', 'diagnostics' => 'Диагностика', 'treatment_method' => 'Метод лечения', 'procedure' => 'Процедура', 'rehabilitation' => 'Упражнения и реабилитация', 'prevention' => 'Профилактика', 'patient_question' => 'Вопрос пациента', 'comparison' => 'Сравнение', 'surgical_treatment' => 'Оперативное лечение']],
+        'PRIMARY_QUERY' => ['id' => '848', 'type' => 'Строка'],
+        'SECONDARY_QUERIES' => ['id' => '849', 'type' => 'Строка', 'multiple' => true],
+        'SEARCH_INTENT' => ['id' => '850', 'type' => 'Справочник', 'values' => ['informational' => 'Информационный', 'commercial_informational' => 'Коммерческо-информационный', 'comparative' => 'Сравнительный']],
+        'SHORT_ANSWER' => ['id' => '851', 'type' => 'Строка'],
+        'REGION' => ['id' => '852', 'type' => 'Справочник', 'values' => ['moscow' => 'Москва', 'saint_petersburg' => 'Санкт-Петербург', 'kazan' => 'Казань', 'ufa' => 'Уфа', 'ekaterinburg' => 'Екатеринбург', 'krasnodar' => 'Краснодар']],
+        'AUTHOR' => ['id' => '853', 'type' => 'Число', 'linked_iblock' => '65'],
+        'MEDICAL_REVIEWER' => ['id' => '854', 'type' => 'Число', 'linked_iblock' => '65'],
+        'MEDICAL_REVIEWED_AT' => ['id' => '855', 'type' => 'Дата'],
+        'CONTENT_UPDATED_AT' => ['id' => '856', 'type' => 'Дата'],
+        'SOURCES' => ['id' => '857', 'type' => 'Строка', 'multiple' => true],
+        'RELATED_ARTICLES' => ['id' => '858', 'type' => 'Число', 'multiple' => true, 'linked_iblock' => '68'],
+        'ARTICLE_TEMPLATE' => ['id' => '864', 'type' => 'Справочник', 'values' => ['default' => 'Стандартная статья']],
+        'ARTICLE_STRUCTURE' => ['id' => '865', 'type' => 'Строка'],
+        'ARTICLE_STRUCTURE_NAME' => ['id' => '866', 'type' => 'Строка'],
+        'ARTICLE_STRUCTURE_VERSION' => ['id' => '867', 'type' => 'Строка'],
+        'RELATED_ARTICLES_V2' => ['id' => '868', 'type' => 'Число', 'multiple' => true, 'linked_iblock' => '81'],
+        'RELATED_SERVICES' => ['id' => '869', 'type' => 'Число', 'multiple' => true, 'linked_iblock' => '70'],
+        'RELATED_CLINICS' => ['id' => '870', 'type' => 'Число', 'multiple' => true, 'linked_iblock' => '10'],
+        'FEATURED_IMAGE_ALT' => ['id' => '871', 'type' => 'Строка'],
+        'SHOW_FORM' => ['id' => '884', 'type' => 'Справочник', 'values' => ['Y' => 'Да', 'N' => 'Нет']],
+        'FORM_ID' => ['id' => '885', 'type' => 'Строка'],
+        'FORM_BUTTON_TEXT' => ['id' => '886', 'type' => 'Строка'],
     ];
 
     /** @var list<string> */
     private array $warnings = [];
     private int $filledProperties = 0;
 
-    /** Пути поиска шаблона: сначала внутри деплоймента, затем прежние tests/fixtures (совместимость/тесты). @return list<string> */
-    public function templatePaths(): array
-    {
-        return [
-            __DIR__ . '/fixtures/bitrix-iblock-81-reference.xml',
-            dirname(__DIR__, 3) . '/tests/fixtures/bitrix-iblock-81-reference.xml',
-            dirname(__DIR__, 3) . '/../tests/fixtures/bitrix-iblock-81-reference.xml',
-        ];
-    }
-
-    private function locateTemplate(): string
-    {
-        foreach ($this->templatePaths() as $path) {
-            if (is_file($path)) return $path;
-        }
-        throw new RuntimeException('Шаблон bitrix-iblock-81-reference.xml не найден ни по одному из путей: ' . implode(', ', $this->templatePaths()));
-    }
-
     public function export(array $payload): DOMDocument
     {
         $this->warnings = [];
         $this->filledProperties = 0;
-        $template = $this->locateTemplate();
+        $normalized = $this->normalizePayload($payload);
+
         $doc = new DOMDocument('1.0', 'UTF-8');
         $doc->formatOutput = true;
         $doc->preserveWhiteSpace = false;
-        $doc->load($template);
-        $schemaProblems = $this->validate($doc);
-        $schemaProblems = array_values(array_filter($schemaProblems, static fn($problem) => str_starts_with($problem, 'В XML-шаблоне отсутствует свойство') || str_starts_with($problem, 'ID свойства')));
-        if ($schemaProblems) {
-            throw new RuntimeException(implode('; ', $schemaProblems));
-        }
-        $doc->documentElement?->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
-        $normalized = $this->normalizePayload($payload);
-        $this->validateSection($doc, $normalized['section']);
-        $goods = $doc->getElementsByTagName('Товары')->item(0);
-        if (!$goods) {
-            $catalog = $doc->getElementsByTagName('Каталог')->item(0) ?: $doc->documentElement?->appendChild($doc->createElement('Каталог'));
-            $goods = $catalog->appendChild($doc->createElement('Товары'));
-        }
-        while ($goods->firstChild) $goods->removeChild($goods->firstChild);
-        $goods->appendChild($this->createProduct($doc, $normalized));
+        $root = $doc->appendChild($doc->createElement('КоммерческаяИнформация'));
+        $root->setAttribute('ВерсияСхемы', '2.021');
+        $root->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
+        $root->appendChild($this->createClassifier($doc, $normalized));
+        $root->appendChild($this->createCatalog($doc, $normalized));
         return $doc;
     }
 
-    /**
-     * Самопроверка собранного документа: обязательные узлы Классификатора/Каталога на месте и группа товара непуста.
-     * @return list<string> перечень отсутствующих/пустых узлов (пустой список — документ валиден)
-     */
+    /** @return list<string> */
     public function validate(DOMDocument $doc): array
     {
         $xp = new DOMXPath($doc);
         $missing = [];
-        if ($xp->query('//Классификатор')->length === 0) $missing[] = 'Классификатор';
-        if ($xp->query('//Каталог/Ид')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/Ид)')) === '') $missing[] = 'Каталог/Ид';
-        if ($xp->query('//Каталог/ИдКлассификатора')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/ИдКлассификатора)')) === '') $missing[] = 'Каталог/ИдКлассификатора';
-        if ($xp->query('//Классификатор/Свойства/Свойство')->length === 0) $missing[] = 'Классификатор/Свойства/Свойство';
-        foreach ($this->templatePropertyProblems($xp) as $problem) $missing[] = $problem;
-        $group = trim((string)$xp->evaluate('string(//Товар/Группы/Ид)'));
-        if ($xp->query('//Товар/Группы/Ид')->length === 0 || $group === '') $missing[] = 'Товар/Группы/Ид';
-        return $missing;
-    }
+        if ($doc->documentElement?->tagName !== 'КоммерческаяИнформация') $missing[] = 'В сформированном XML отсутствует корневой узел КоммерческаяИнформация.';
+        if ($xp->query('//Классификатор')->length === 0) $missing[] = 'В сформированном XML отсутствует Классификатор.';
+        if (trim((string)$xp->evaluate('string(//Классификатор/Ид)')) !== self::CLASSIFIER_ID) $missing[] = 'В сформированном XML неверный Классификатор/Ид.';
 
-
-    /** @return list<string> */
-    private function templatePropertyProblems(DOMXPath $xp): array
-    {
         $actual = [];
         foreach ($xp->query('//Классификатор/Свойства/Свойство') as $property) {
             $code = trim((string)$xp->evaluate('string(Наименование)', $property));
             $id = trim((string)$xp->evaluate('string(Ид)', $property));
             if ($code !== '') $actual[$code] = $id;
         }
+        foreach (self::PROPERTY_SCHEMA as $code => $schema) {
+            if (!array_key_exists($code, $actual)) $missing[] = 'В сформированном XML отсутствует свойство ' . $code . ' с ID ' . $schema['id'] . '.';
+            elseif ($actual[$code] !== $schema['id']) $missing[] = 'В сформированном XML свойство ' . $code . ' имеет ID ' . $actual[$code] . ' вместо ' . $schema['id'] . '.';
+        }
 
-        $problems = [];
-        foreach (self::PROPERTY_IDS as $code => $expectedId) {
-            if (!array_key_exists($code, $actual)) {
-                $problems[] = 'В XML-шаблоне отсутствует свойство ' . $code . ' с ID ' . $expectedId;
-            } elseif ($actual[$code] !== $expectedId) {
-                $problems[] = 'ID свойства ' . $code . ' в шаблоне не соответствует карте экспортёра: ожидается ' . $expectedId;
-            }
+        if (trim((string)$xp->evaluate('string(//Каталог/Ид)')) !== self::CATALOG_ID) $missing[] = 'В сформированном XML неверный Каталог/Ид.';
+        if (trim((string)$xp->evaluate('string(//Каталог/ИдКлассификатора)')) !== self::CLASSIFIER_ID) $missing[] = 'В сформированном XML неверный Каталог/ИдКлассификатора.';
+        if ($xp->query('//Товар')->length === 0) $missing[] = 'В сформированном XML отсутствует Товар.';
+        foreach (['Ид', 'Наименование'] as $tag) if (trim((string)$xp->evaluate('string(//Товар/' . $tag . ')')) === '') $missing[] = 'В сформированном XML пустой Товар/' . $tag . '.';
+        if (trim((string)$xp->evaluate('string(//Товар/Группы/Ид)')) === '') $missing[] = 'В сформированном XML пустой Товар/Группы/Ид.';
+        if (trim((string)$xp->evaluate('string(//Товар/ЗначениеРеквизита[Наименование="CML2_CODE"]/Значение)')) === '') $missing[] = 'В сформированном XML пустой CML2_CODE товара.';
+        $knownIds = array_column(self::PROPERTY_SCHEMA, 'id');
+        foreach ($xp->query('//Товар/ЗначенияСвойств/ЗначенияСвойства/Ид') as $idNode) {
+            $id = trim($idNode->textContent);
+            if (!in_array($id, $knownIds, true)) $missing[] = 'В сформированном XML значение свойства с неизвестным ID ' . $id . '.';
         }
-        return $problems;
-    }
-
-    /** Проверить, что раздел товара присутствует в группах Классификатора шаблона; иначе — предупреждение. */
-    private function validateSection(DOMDocument $doc, string $section): void
-    {
-        $section = trim($section);
-        if ($section === '') return;
-        $xp = new DOMXPath($doc);
-        $groups = [];
-        foreach ($xp->query('//Классификатор/Группы//Группа/Ид') as $node) {
-            $id = trim($node->textContent);
-            if ($id !== '') $groups[$id] = true;
-        }
-        if ($groups && !isset($groups[$section])) {
-            $this->warnings[] = 'Раздел ' . $section . ' отсутствует в Классификаторе шаблона; убедитесь, что в инфоблоке 81 существует раздел с этим XML_ID.';
-        }
+        return $missing;
     }
 
     public function filename(array $payload): string
@@ -129,6 +99,51 @@ final class BitrixArticleXmlExporter
     /** @return list<string> */
     public function warnings(): array { return $this->warnings; }
     public function filledProperties(): int { return $this->filledProperties; }
+
+    private function createClassifier(DOMDocument $doc, array $p): DOMElement
+    {
+        $classifier = $doc->createElement('Классификатор');
+        $classifier->appendChild($doc->createElement('Ид', self::CLASSIFIER_ID));
+        $classifier->appendChild($doc->createElement('Наименование', self::CLASSIFIER_NAME));
+        $props = $classifier->appendChild($doc->createElement('Свойства'));
+        foreach (self::PROPERTY_SCHEMA as $code => $schema) $props->appendChild($this->createPropertyDefinition($doc, $code, $schema));
+        $groups = $classifier->appendChild($doc->createElement('Группы'));
+        $group = $groups->appendChild($doc->createElement('Группа'));
+        $group->appendChild($doc->createElement('Ид', $p['section']));
+        $group->appendChild($doc->createElement('Наименование'))->appendChild($doc->createTextNode($p['section_name'] ?: $p['section']));
+        return $classifier;
+    }
+
+    private function createPropertyDefinition(DOMDocument $doc, string $code, array $schema): DOMElement
+    {
+        $property = $doc->createElement('Свойство');
+        $property->appendChild($doc->createElement('Ид', (string)$schema['id']));
+        $property->appendChild($doc->createElement('Наименование', $code));
+        $property->appendChild($doc->createElement('ТипЗначений', (string)$schema['type']));
+        if (!empty($schema['multiple'])) $property->appendChild($doc->createElement('Множественное', 'true'));
+        if (!empty($schema['linked_iblock'])) $property->appendChild($doc->createElement('СсылочныйИнфоблок', (string)$schema['linked_iblock']));
+        if (!empty($schema['values']) && is_array($schema['values'])) {
+            $values = $property->appendChild($doc->createElement('ВариантыЗначений'));
+            foreach ($schema['values'] as $xmlId => $label) {
+                $item = $values->appendChild($doc->createElement('Справочник'));
+                $item->appendChild($doc->createElement('ИдЗначения', (string)$xmlId));
+                $item->appendChild($doc->createElement('Значение'))->appendChild($doc->createTextNode((string)$label));
+            }
+        }
+        return $property;
+    }
+
+    private function createCatalog(DOMDocument $doc, array $p): DOMElement
+    {
+        $catalog = $doc->createElement('Каталог');
+        $catalog->appendChild($doc->createElement('Ид', self::CATALOG_ID));
+        $catalog->appendChild($doc->createElement('ИдКлассификатора', self::CLASSIFIER_ID));
+        $catalog->appendChild($doc->createElement('Наименование', self::CLASSIFIER_NAME));
+        $catalog->appendChild($doc->createElement('Описание', self::CATALOG_DESCRIPTION));
+        $goods = $catalog->appendChild($doc->createElement('Товары'));
+        $goods->appendChild($this->createProduct($doc, $p));
+        return $catalog;
+    }
 
     /** @return array<string,mixed> */
     private function normalizePayload(array $payload): array
@@ -147,6 +162,7 @@ final class BitrixArticleXmlExporter
             'preview' => (string)($payload['preview_text'] ?? $payload['result_preview'] ?? ''),
             'detail' => $this->sanitizeHtml((string)($payload['detail_html'] ?? $payload['result_detail_html'] ?? '')),
             'section' => (string)($payload['section'] ?? $payload['article_section_id'] ?? ''),
+            'section_name' => (string)($payload['section_name'] ?? $payload['article_section'] ?? ''),
             'primary_query' => (string)($payload['primary_query'] ?? ''),
             'secondary_queries' => $this->list($payload['secondary_queries'] ?? []),
             'search_intent' => (string)($payload['search_intent_xml_id'] ?? $payload['search_intent'] ?? ''),
@@ -209,13 +225,21 @@ final class BitrixArticleXmlExporter
         $node->appendChild($doc->createElement('Значение'))->appendChild($doc->createTextNode($value));
     }
 
+    private function propertyId(string $code): string
+    {
+        $propertyId = self::PROPERTY_SCHEMA[$code]['id'] ?? null;
+        if ($propertyId === null) throw new InvalidArgumentException('Неизвестное свойство XML: ' . $code);
+        return (string)$propertyId;
+    }
+
     private function property(DOMDocument $doc, DOMElement $props, string $code, array $values): void
     {
+        $propertyId = $this->propertyId($code);
         $values = array_values(array_filter(array_map('strval', $values), static fn($v) => trim($v) !== ''));
         if (!$values) return;
         $this->filledProperties++;
         $node = $props->appendChild($doc->createElement('ЗначенияСвойства'));
-        $node->appendChild($doc->createElement('Ид', self::PROPERTY_IDS[$code]));
+        $node->appendChild($doc->createElement('Ид', $propertyId));
         $node->appendChild($doc->createElement('Наименование', $code));
         foreach ($values as $value) $node->appendChild($doc->createElement('Значение'))->appendChild($doc->createTextNode($value));
     }
