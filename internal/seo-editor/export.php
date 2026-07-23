@@ -38,7 +38,7 @@ $exporter = new BitrixArticleXmlExporter();
 try {
     $doc = $exporter->export($payload);
 } catch (RuntimeException $e) {
-    jsonError(500, 'Шаблон bitrix-iblock-81-reference.xml не найден на сервере', ['paths'=>$exporter->templatePaths()]);
+    jsonError(500, $e->getMessage(), ['paths'=>$exporter->templatePaths()]);
 }
 $problems = $exporter->validate($doc);
 if ($problems) jsonError(500, 'Сформированный XML неполный: отсутствуют обязательные узлы.', ['missing'=>$problems]);
