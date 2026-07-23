@@ -640,6 +640,29 @@
         <div class="hint">После применения результат будет записан в итоговые поля статьи. Bitrix XML формируется из итоговой версии статьи. XML будет сформирован из применённой версии статьи.</div>
       </div>
       <div class="card">
+        <h3>Форма записи</h3>
+        <div class="row2">
+          <div class="field">
+            <label for="show_form">Отображение формы</label>
+            <select id="show_form" name="show_form">
+              <option value="N">Не показывать</option>
+              <option value="Y">Показывать</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="form_id">Форма записи</label>
+            <select id="form_id" name="form_id">
+              <option value="">— форма не выбрана —</option>
+            </select>
+            <div class="hint sys">Список загружается из справочника форм. FORM_ID сохраняется строкой.</div>
+          </div>
+        </div>
+        <div class="field">
+          <label for="form_button_text">Текст кнопки формы</label>
+          <input id="form_button_text" name="form_button_text" type="text" placeholder="Записаться на приём">
+        </div>
+      </div>
+      <div class="card">
         <div class="callout info"><b>Сценарий 1 (текущий).</b> Система формирует XML, вы скачиваете его и импортируете в Bitrix вручную. Права записи не выдаются.</div>
         <div class="btnrow mb-18">
           <button type="button" class="btn primary" data-action="download_bitrix_xml">Сформировать XML для импорта</button>

@@ -12,6 +12,7 @@ final class BitrixArticleXmlExporter
         'ARTICLE_TEMPLATE' => '864', 'ARTICLE_STRUCTURE' => '865', 'ARTICLE_STRUCTURE_NAME' => '866',
         'ARTICLE_STRUCTURE_VERSION' => '867', 'RELATED_ARTICLES_V2' => '868',
         'RELATED_SERVICES' => '869', 'RELATED_CLINICS' => '870', 'FEATURED_IMAGE_ALT' => '871',
+        'SHOW_FORM' => '884', 'FORM_ID' => '885', 'FORM_BUTTON_TEXT' => '886',
     ];
 
     /** @var list<string> */
@@ -45,6 +46,11 @@ final class BitrixArticleXmlExporter
         $doc->formatOutput = true;
         $doc->preserveWhiteSpace = false;
         $doc->load($template);
+        $schemaProblems = $this->validate($doc);
+        $schemaProblems = array_values(array_filter($schemaProblems, static fn($problem) => str_starts_with($problem, 'В XML-шаблоне отсутствует свойство') || str_starts_with($problem, 'ID свойства')));
+        if ($schemaProblems) {
+            throw new RuntimeException(implode('; ', $schemaProblems));
+        }
         $doc->documentElement?->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
         $normalized = $this->normalizePayload($payload);
         $this->validateSection($doc, $normalized['section']);
@@ -70,9 +76,32 @@ final class BitrixArticleXmlExporter
         if ($xp->query('//Каталог/Ид')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/Ид)')) === '') $missing[] = 'Каталог/Ид';
         if ($xp->query('//Каталог/ИдКлассификатора')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/ИдКлассификатора)')) === '') $missing[] = 'Каталог/ИдКлассификатора';
         if ($xp->query('//Классификатор/Свойства/Свойство')->length === 0) $missing[] = 'Классификатор/Свойства/Свойство';
+        foreach ($this->templatePropertyProblems($xp) as $problem) $missing[] = $problem;
         $group = trim((string)$xp->evaluate('string(//Товар/Группы/Ид)'));
         if ($xp->query('//Товар/Группы/Ид')->length === 0 || $group === '') $missing[] = 'Товар/Группы/Ид';
         return $missing;
+    }
+
+
+    /** @return list<string> */
+    private function templatePropertyProblems(DOMXPath $xp): array
+    {
+        $actual = [];
+        foreach ($xp->query('//Классификатор/Свойства/Свойство') as $property) {
+            $code = trim((string)$xp->evaluate('string(Наименование)', $property));
+            $id = trim((string)$xp->evaluate('string(Ид)', $property));
+            if ($code !== '') $actual[$code] = $id;
+        }
+
+        $problems = [];
+        foreach (self::PROPERTY_IDS as $code => $expectedId) {
+            if (!array_key_exists($code, $actual)) {
+                $problems[] = 'В XML-шаблоне отсутствует свойство ' . $code . ' с ID ' . $expectedId;
+            } elseif ($actual[$code] !== $expectedId) {
+                $problems[] = 'ID свойства ' . $code . ' в шаблоне не соответствует карте экспортёра: ожидается ' . $expectedId;
+            }
+        }
+        return $problems;
     }
 
     /** Проверить, что раздел товара присутствует в группах Классификатора шаблона; иначе — предупреждение. */
@@ -106,6 +135,12 @@ final class BitrixArticleXmlExporter
     {
         [$legacy, $v2] = $this->splitArticleRelations($payload['related_articles'] ?? []);
         $explicitV2 = $this->relationIds($payload['related_articles_v2'] ?? []);
+        $formId = trim((string)($payload['form_id'] ?? ''));
+        $showForm = strtoupper(trim((string)($payload['show_form'] ?? '')));
+        if (!in_array($showForm, ['Y', 'N'], true)) {
+            $showForm = $formId !== '' ? 'Y' : 'N';
+        }
+        $formButtonText = trim((string)($payload['form_button_text'] ?? ''));
         return [
             'code' => (string)($payload['code'] ?? $payload['result_code'] ?? ''),
             'name' => (string)($payload['name'] ?? $payload['result_name'] ?? ''),
@@ -132,6 +167,9 @@ final class BitrixArticleXmlExporter
             'article_structure_name' => (string)($payload['article_structure_name'] ?? ''),
             'article_structure_version' => (string)($payload['article_structure_version'] ?? ''),
             'featured_image_alt' => strip_tags((string)($payload['featured_image_alt'] ?? '')),
+            'show_form' => $showForm,
+            'form_id' => $formId,
+            'form_button_text' => $formButtonText,
         ];
     }
 
@@ -158,6 +196,7 @@ final class BitrixArticleXmlExporter
             'ARTICLE_STRUCTURE'=>[$p['article_structure']], 'ARTICLE_STRUCTURE_NAME'=>[$p['article_structure_name']],
             'ARTICLE_STRUCTURE_VERSION'=>[$p['article_structure_version']], 'RELATED_ARTICLES_V2'=>$p['related_articles_v2'],
             'RELATED_SERVICES'=>$p['related_services'], 'RELATED_CLINICS'=>$p['related_clinics'], 'FEATURED_IMAGE_ALT'=>[$p['featured_image_alt']],
+            'SHOW_FORM'=>[$p['show_form']], 'FORM_ID'=>[$p['form_id']], 'FORM_BUTTON_TEXT'=>[$p['form_button_text']],
         ] as $code => $values) $this->property($doc, $props, $code, $values);
         return $product;
     }

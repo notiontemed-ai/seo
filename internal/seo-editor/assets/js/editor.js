@@ -225,6 +225,34 @@ function setOptions(select,items,placeholder,labelBuilder,valueBuilder){
   }
 }
 
+
+function formDictionaryItems(){return Array.isArray(APP_DATA.dictionaries.forms)?APP_DATA.dictionaries.forms:[];}
+function formItemId(item){return String(item?.id??item?.element_id??item?.value??item?.xml_id??'').trim();}
+function formItemButtonText(item){return String(item?.button_text??item?.buttonText??item?.properties?.BUTTON_TEXT?.value??item?.properties?.FORM_BUTTON_TEXT?.value??'').trim();}
+function formItemLabel(item){const id=formItemId(item);const name=String(item?.name??item?.title??item?.value??'Форма записи').trim();return id?`${name} — ID ${id}`:name;}
+function selectedFormItem(){const id=fieldValue('form_id').trim();if(!id)return null;return formDictionaryItems().find(item=>formItemId(item)===id)||null;}
+function syncFormSelect(){
+  const select=document.getElementById('form_id');
+  if(!select)return;
+  const current=select.value;
+  select.innerHTML='<option value="">— форма не выбрана —</option>';
+  formDictionaryItems().forEach(item=>{
+    const id=formItemId(item);
+    if(!id)return;
+    const option=document.createElement('option');
+    option.value=id;
+    option.textContent=formItemLabel(item);
+    option.dataset.buttonText=formItemButtonText(item);
+    select.appendChild(option);
+  });
+  if([...select.options].some(option=>option.value===current))select.value=current;
+}
+function syncSelectedFormButtonText(){
+  const option=document.getElementById('form_id')?.selectedOptions[0];
+  const buttonText=option?.dataset.buttonText||formItemButtonText(selectedFormItem());
+  if(buttonText&&!fieldValue('form_button_text').trim())setFieldValue('form_button_text',buttonText);
+}
+
 function enumFallback(items,fallbackValues){
   if(Array.isArray(items)&&items.length) return items;
   return fallbackValues.map((value,index)=>({
@@ -529,6 +557,8 @@ function populateBootstrap(data){
     document.getElementById('article_template').value='default';
   }
 
+  syncFormSelect();
+
   const sections=dictionaries.article_sections&&Array.isArray(dictionaries.article_sections.new)
     ? dictionaries.article_sections.new
     : [];
@@ -642,6 +672,14 @@ document.getElementById('article_type').addEventListener('change',()=>{
 document.getElementById('region').addEventListener('change',()=>{
   syncEnumSelect(document.getElementById('region'),'region_id','region_xml_id');
 });
+document.getElementById('show_form')?.addEventListener('change',()=>{
+  if(fieldValue('show_form')==='Y')syncSelectedFormButtonText();
+});
+document.getElementById('form_id')?.addEventListener('change',()=>{
+  if(fieldValue('form_id').trim()&&!fieldValue('show_form'))setFieldValue('show_form','Y');
+  syncSelectedFormButtonText();
+});
+
 document.getElementById('article_template').addEventListener('change',()=>{
   syncEnumSelect(document.getElementById('article_template'),'article_template_id','article_template_xml_id');
   const value=document.getElementById('article_template').value;
@@ -1396,6 +1434,11 @@ async function loadExistingArticle(button){
     setFieldValue('medical_reviewed_at',bitrixDateToInput(propertyTextFromArticle(item,'MEDICAL_REVIEWED_AT')));
     setFieldValue('content_updated_at',bitrixDateToInput(propertyTextFromArticle(item,'CONTENT_UPDATED_AT')));
     setFieldValue('featured_image_alt',propertyTextFromArticle(item,'FEATURED_IMAGE_ALT'));
+    setFieldValue('show_form',propertyXmlIdFromArticle(item,'SHOW_FORM')||'N');
+    setFieldValue('form_id',propertyTextFromArticle(item,'FORM_ID'));
+    setFieldValue('form_button_text',propertyTextFromArticle(item,'FORM_BUTTON_TEXT'));
+    syncFormSelect();
+    syncSelectedFormButtonText();
     syncEnumSelect(document.getElementById('article_type'),'article_type_id','article_type_xml_id');
     syncEnumSelect(document.getElementById('region'),'region_id','region_xml_id');
     syncEnumSelect(document.getElementById('article_template'),'article_template_id','article_template_xml_id');
@@ -2236,19 +2279,19 @@ function renderAssistantSources(sources){const box=document.getElementById('assi
 function renderAssistantSuggestions(items){const box=document.getElementById('assistant_suggestions');if(!box)return;box.textContent='';(items||[]).forEach(s=>{const card=document.createElement('div');card.className='suggestion-card';const text=document.createElement('div');text.textContent=`Поле: ${s.field_id}. Предлагается: ${s.label||s.value}. Причина: ${s.reason||''}`;const btn=document.createElement('button');btn.type='button';btn.className='btn';btn.textContent='Применить';btn.addEventListener('click',()=>applyAssistantSuggestion(s));card.append(text,btn);box.appendChild(card);});}
 function applyAssistantSuggestion(s){if(!s||!ASSISTANT_ALLOWED_FIELDS.has(s.field_id)){alert('Ассистент предложил неизвестное или запрещённое поле.');return;}const el=document.getElementById(s.field_id);if(!el||el.readOnly){alert('Поле нельзя изменить.');return;}if(el.tagName==='SELECT'&&s.value&&!Array.from(el.options).some(o=>o.value===String(s.value))){alert('Недопустимое значение списка.');return;}const old=el.value;if(!confirm(`Применить предложение?\n\nПоле: ${s.field_id}\nТекущее значение: ${old||'—'}\nПредлагается: ${s.value||'—'}`))return;setFieldValue(s.field_id,s.value);logAction('Применено предложение ассистента',{field_id:s.field_id,old,new:s.value});if(['result_name','result_preview','result_short_answer','result_detail_html'].includes(s.field_id))markUniquenessOutdated();}
 async function sendAssistantMessage(){const input=document.getElementById('assistant_input');const message=input?.value.trim();if(!message)return;APP_STATE.assistant.messages.push({role:'user',content:message});APP_STATE.assistant.messages=APP_STATE.assistant.messages.slice(-20);renderAssistantMessage('user',message);input.value='';try{const data=await callN8n('assistant_chat',collectAssistantContext(),document.getElementById('assistant_send'));if(!data||typeof data!=='object'){throw new Error('Ассистент вернул некорректный ответ.');}const answer=typeof data.answer==='string'&&data.answer.trim()?data.answer.trim():'Ассистент не вернул текст ответа.';APP_STATE.assistant.messages.push({role:'assistant',content:answer});APP_STATE.assistant.messages=APP_STATE.assistant.messages.slice(-20);sessionStorage.setItem('temed_assistant_'+(fieldValue('generation_id')||'draft'),JSON.stringify(APP_STATE.assistant.messages));renderAssistantMessage('assistant',answer);renderAssistantSources(data.sources);renderAssistantSuggestions(data.suggestions);}catch(e){renderAssistantMessage('assistant','Ошибка ассистента: '+String(e.message||e));}}
-const XML_REQUIRED_FIELD_LABELS={name:'Название статьи',code:'Символьный код URL',detail_html:'Полный текст статьи',primary_query:'Основной поисковый запрос',article_structure:'Структура статьи',article_structure_version:'Версия структуры статьи — повторно выберите структуру статьи',search_intent:'Поисковый интент',article_type:'Тип статьи',author_id:'Автор',medical_reviewer_id:'Проверивший врач',section:'Раздел статьи'};
+const XML_REQUIRED_FIELD_LABELS={form_id:'Выбрано отображение формы, но не указана форма записи',name:'Название статьи',code:'Символьный код URL',detail_html:'Полный текст статьи',primary_query:'Основной поисковый запрос',article_structure:'Структура статьи',article_structure_version:'Версия структуры статьи — повторно выберите структуру статьи',search_intent:'Поисковый интент',article_type:'Тип статьи',author_id:'Автор',medical_reviewer_id:'Проверивший врач',section:'Раздел статьи'};
 const XML_FIELD_TARGETS={name:'result_name',code:'result_code',detail_html:'result_detail_html',primary_query:'primary_query',article_type:'article_type',author_id:'author_id',medical_reviewer_id:'medical_reviewer_id',section:'article_section_id'};
 const XML_SEARCH_TASK_FIELDS=new Set(['article_structure','article_structure_version','search_intent']);
 function xmlExportSectionValue(){const sectionId=fieldValue('article_section_id');return sectionId==='__new__'?fieldValue('article_section'):(sectionId||fieldValue('article_section'));}
-function bitrixXmlPayload(){const article=currentArticleObject();return {...article,name:article.name,code:article.code,preview_text:article.preview_text,detail_html:article.detail_html,section:xmlExportSectionValue(),primary_query:fieldValue('primary_query'),secondary_queries:fieldValue('secondary_queries'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),article_structure_name:fieldValue('article_structure_name'),article_structure_version:fieldValue('article_structure_version'),short_answer:fieldValue('result_short_answer'),region:fieldValue('region'),region_xml_id:fieldValue('region_xml_id'),article_template:fieldValue('article_template'),article_template_xml_id:fieldValue('article_template_xml_id'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),medical_reviewed_at:fieldValue('medical_reviewed_at'),content_updated_at:fieldValue('content_updated_at'),sources:article.sources,related_articles:getSelectedRelatedArticles(),related_services:getSelectedRelatedServices(),related_clinics:getSelectedRelatedClinics(),article_type:fieldValue('article_type'),article_type_xml_id:fieldValue('article_type_xml_id'),featured_image_alt:fieldValue('featured_image_alt')};}
-function validateXmlRequiredFields(payload){return Object.keys(XML_REQUIRED_FIELD_LABELS).filter(code=>!String(payload?.[code]??'').trim());}
+function bitrixXmlPayload(){const article=currentArticleObject();const formId=fieldValue('form_id').trim();return {...article,name:article.name,code:article.code,preview_text:article.preview_text,detail_html:article.detail_html,section:xmlExportSectionValue(),primary_query:fieldValue('primary_query'),secondary_queries:fieldValue('secondary_queries'),search_intent:fieldValue('search_intent'),article_structure:fieldValue('article_structure'),article_structure_name:fieldValue('article_structure_name'),article_structure_version:fieldValue('article_structure_version'),short_answer:fieldValue('result_short_answer'),region:fieldValue('region'),region_xml_id:fieldValue('region_xml_id'),article_template:fieldValue('article_template'),article_template_xml_id:fieldValue('article_template_xml_id'),author_id:fieldValue('author_id'),medical_reviewer_id:fieldValue('medical_reviewer_id'),medical_reviewed_at:fieldValue('medical_reviewed_at'),content_updated_at:fieldValue('content_updated_at'),sources:article.sources,related_articles:getSelectedRelatedArticles(),related_services:getSelectedRelatedServices(),related_clinics:getSelectedRelatedClinics(),article_type:fieldValue('article_type'),article_type_xml_id:fieldValue('article_type_xml_id'),featured_image_alt:fieldValue('featured_image_alt'),show_form:fieldValue('show_form')||(formId?'Y':'N'),form_id:formId,form_button_text:fieldValue('form_button_text').trim()};}
+function validateXmlRequiredFields(payload){const missing=Object.keys(XML_REQUIRED_FIELD_LABELS).filter(code=>code!=='form_id'&&!String(payload?.[code]??'').trim());if(String(payload?.show_form||'').trim()==='Y'&&!String(payload?.form_id||'').trim())missing.push('form_id');return missing;}
 function formatXmlMissingFieldsMessage(missingFields){const labels=missingFields.map(code=>XML_REQUIRED_FIELD_LABELS[code]||code);return `Не удалось сформировать XML.\n\nНе заполнены обязательные поля:\n• ${labels.join('\n• ')}\n\nПервое незаполненное поле выделено в редакторе.\n\nИсправьте указанные поля и повторите экспорт.`;}
 function xmlFieldElement(code){if(code==='author_id')return document.getElementById('author_search')||document.getElementById('author_id');if(code==='medical_reviewer_id')return document.getElementById('medical_reviewer_search')||document.getElementById('medical_reviewer_id');if(code==='section'&&fieldValue('article_section_id')==='__new__')return document.getElementById('new_article_section')||document.getElementById('article_section_id');return document.getElementById(XML_FIELD_TARGETS[code]||code);}
 function clearXmlFieldErrors(){document.querySelectorAll('.xml-field-error').forEach(el=>el.classList.remove('xml-field-error'));}
 function markXmlFieldError(code){if(XML_SEARCH_TASK_FIELDS.has(code)){document.getElementById(code==='search_intent'?'intentCards':'structCards')?.classList.add('xml-field-error');return;}const el=xmlFieldElement(code);if(!el)return;el.classList.add('xml-field-error');}
 function focusFirstXmlFieldError(missingFields){const first=missingFields[0];if(!first)return;if(XML_SEARCH_TASK_FIELDS.has(first)){goto(0);setTimeout(()=>{const target=document.getElementById(first==='search_intent'?'intentCards':'structCards');target?.scrollIntoView({behavior:'smooth',block:'center'});target?.querySelector('button:not(:disabled)')?.focus({preventScroll:true});},80);return;}const el=xmlFieldElement(first);const step=el?.closest('.step');if(step)goto(Number(step.dataset.step));setTimeout(()=>{el?.scrollIntoView({behavior:'smooth',block:'center'});if(el&&/^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(el.tagName)&&el.type!=='hidden')el.focus({preventScroll:true});},80);}
 function handleXmlMissingFields(missingFields,source){clearXmlFieldErrors();missingFields.forEach(markXmlFieldError);focusFirstXmlFieldError(missingFields);const message=formatXmlMissingFieldsMessage(missingFields);setFieldValue('save_result',message);logAction('XML не сформирован: не заполнены обязательные поля',{source,missing_fields:missingFields});alert(message);}
-async function downloadBitrixXml(button){setButtonBusy(button,true);clearResultReport('xml_report_cards');try{const payload=bitrixXmlPayload();const clientMissing=validateXmlRequiredFields(payload);if(clientMissing.length){handleXmlMissingFields(clientMissing,'client');return;}const response=await fetch('export.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/xml, application/json'},body:JSON.stringify(payload)});const type=response.headers.get('Content-Type')||'';if(type.includes('application/json')){const err=await response.json();if(!response.ok||err.success===false){const missing=Array.isArray(err.details?.missing_fields)?err.details.missing_fields.filter(code=>XML_REQUIRED_FIELD_LABELS[code]):[];if(missing.length){handleXmlMissingFields(missing,'server');return;}throw new Error(err.message||'Ошибка формирования XML');}}else if(!response.ok){throw new Error('Ошибка HTTP '+response.status);}clearXmlFieldErrors();const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/);const filename=match?match[1]:'bitrix-article.xml';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);const warningsHeader=response.headers.get('X-TEMED-XML-Warnings')||'';let xmlWarnings=[];if(warningsHeader){try{const parsed=JSON.parse(decodeURIComponent(warningsHeader));if(Array.isArray(parsed))xmlWarnings=parsed.filter(w=>typeof w==='string'&&w.trim()!=='');}catch(e){}}if(xmlWarnings.length){logAction('XML сформирован с предупреждениями',{warnings:xmlWarnings});}renderResultReport('xml_report_cards',buildResultReport('Готово: XML сформирован.',xmlWarnings.map(w=>({raw:w,severity:'warning'}))));setFieldValue('save_result',`XML сформирован: ${filename}
+async function downloadBitrixXml(button){setButtonBusy(button,true);clearResultReport('xml_report_cards');try{const payload=bitrixXmlPayload();if(payload.show_form==='Y'&&!payload.form_button_text){payload.form_button_text=formItemButtonText(selectedFormItem())||'Записаться на приём';setFieldValue('form_button_text',payload.form_button_text);}const clientMissing=validateXmlRequiredFields(payload);if(clientMissing.length){handleXmlMissingFields(clientMissing,'client');return;}const response=await fetch('export.php',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/xml, application/json'},body:JSON.stringify(payload)});const type=response.headers.get('Content-Type')||'';if(type.includes('application/json')){const err=await response.json();if(!response.ok||err.success===false){const missing=Array.isArray(err.details?.missing_fields)?err.details.missing_fields.filter(code=>XML_REQUIRED_FIELD_LABELS[code]):[];if(missing.length){handleXmlMissingFields(missing,'server');return;}throw new Error(err.message||'Ошибка формирования XML');}}else if(!response.ok){throw new Error('Ошибка HTTP '+response.status);}clearXmlFieldErrors();const blob=await response.blob();const disposition=response.headers.get('Content-Disposition')||'';const match=disposition.match(/filename="?([^";]+)"?/);const filename=match?match[1]:'bitrix-article.xml';const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);const warningsHeader=response.headers.get('X-TEMED-XML-Warnings')||'';let xmlWarnings=[];if(warningsHeader){try{const parsed=JSON.parse(decodeURIComponent(warningsHeader));if(Array.isArray(parsed))xmlWarnings=parsed.filter(w=>typeof w==='string'&&w.trim()!=='');}catch(e){}}if(xmlWarnings.length){logAction('XML сформирован с предупреждениями',{warnings:xmlWarnings});}renderResultReport('xml_report_cards',buildResultReport('Готово: XML сформирован.',xmlWarnings.map(w=>({raw:w,severity:'warning'}))));setFieldValue('save_result',`XML сформирован: ${filename}
 Статус статьи в XML: неактивна`);logAction('XML сформирован',{filename});}catch(e){const message=String(e.message||e||'Ошибка формирования XML');setFieldValue('save_result',message);logAction('XML не сформирован',{error:message});alert(message);}finally{setButtonBusy(button,false);}}
 ['result_name','result_preview','result_short_answer','result_detail_html'].forEach(id=>document.getElementById(id)?.addEventListener('input',markUniquenessOutdated));
 document.getElementById('result_detail_html')?.addEventListener('input',()=>invalidateArticleValidation('result_detail_html_input'));
