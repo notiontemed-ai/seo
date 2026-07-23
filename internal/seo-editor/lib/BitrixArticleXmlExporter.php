@@ -19,106 +19,66 @@ final class BitrixArticleXmlExporter
     private array $warnings = [];
     private int $filledProperties = 0;
 
-    /** Пути поиска шаблона: сначала внутри деплоймента, затем прежние tests/fixtures (совместимость/тесты). @return list<string> */
-    public function templatePaths(): array
-    {
-        return [
-            __DIR__ . '/fixtures/bitrix-iblock-81-reference.xml',
-            dirname(__DIR__, 3) . '/tests/fixtures/bitrix-iblock-81-reference.xml',
-            dirname(__DIR__, 3) . '/../tests/fixtures/bitrix-iblock-81-reference.xml',
-        ];
-    }
-
-    private function locateTemplate(): string
-    {
-        foreach ($this->templatePaths() as $path) {
-            if (is_file($path)) return $path;
-        }
-        throw new RuntimeException('Шаблон bitrix-iblock-81-reference.xml не найден ни по одному из путей: ' . implode(', ', $this->templatePaths()));
-    }
-
     public function export(array $payload): DOMDocument
     {
         $this->warnings = [];
         $this->filledProperties = 0;
-        $template = $this->locateTemplate();
+
         $doc = new DOMDocument('1.0', 'UTF-8');
         $doc->formatOutput = true;
         $doc->preserveWhiteSpace = false;
-        $doc->load($template);
-        $schemaProblems = $this->validate($doc);
-        $schemaProblems = array_values(array_filter($schemaProblems, static fn($problem) => str_starts_with($problem, 'В XML-шаблоне отсутствует свойство') || str_starts_with($problem, 'ID свойства')));
-        if ($schemaProblems) {
-            throw new RuntimeException(implode('; ', $schemaProblems));
-        }
-        $doc->documentElement?->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
-        $normalized = $this->normalizePayload($payload);
-        $this->validateSection($doc, $normalized['section']);
-        $goods = $doc->getElementsByTagName('Товары')->item(0);
-        if (!$goods) {
-            $catalog = $doc->getElementsByTagName('Каталог')->item(0) ?: $doc->documentElement?->appendChild($doc->createElement('Каталог'));
-            $goods = $catalog->appendChild($doc->createElement('Товары'));
-        }
-        while ($goods->firstChild) $goods->removeChild($goods->firstChild);
-        $goods->appendChild($this->createProduct($doc, $normalized));
+
+        $root = $doc->appendChild($doc->createElement('КоммерческаяИнформация'));
+        $root->setAttribute('ВерсияСхемы', '2.021');
+        $root->setAttribute('ДатаФормирования', gmdate('Y-m-d\TH:i:s'));
+
+        $catalog = $root->appendChild($doc->createElement('Каталог'));
+        $goods = $catalog->appendChild($doc->createElement('Товары'));
+        $goods->appendChild($this->createProduct($doc, $this->normalizePayload($payload)));
+
         return $doc;
     }
 
     /**
-     * Самопроверка собранного документа: обязательные узлы Классификатора/Каталога на месте и группа товара непуста.
+     * Минимальная самопроверка XML статьи для импорта в существующий инфоблок.
      * @return list<string> перечень отсутствующих/пустых узлов (пустой список — документ валиден)
      */
     public function validate(DOMDocument $doc): array
     {
         $xp = new DOMXPath($doc);
         $missing = [];
-        if ($xp->query('//Классификатор')->length === 0) $missing[] = 'Классификатор';
-        if ($xp->query('//Каталог/Ид')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/Ид)')) === '') $missing[] = 'Каталог/Ид';
-        if ($xp->query('//Каталог/ИдКлассификатора')->length === 0 || trim((string)$xp->evaluate('string(//Каталог/ИдКлассификатора)')) === '') $missing[] = 'Каталог/ИдКлассификатора';
-        if ($xp->query('//Классификатор/Свойства/Свойство')->length === 0) $missing[] = 'Классификатор/Свойства/Свойство';
-        foreach ($this->templatePropertyProblems($xp) as $problem) $missing[] = $problem;
-        $group = trim((string)$xp->evaluate('string(//Товар/Группы/Ид)'));
-        if ($xp->query('//Товар/Группы/Ид')->length === 0 || $group === '') $missing[] = 'Товар/Группы/Ид';
+
+        if ($doc->documentElement?->nodeName !== 'КоммерческаяИнформация') {
+            $missing[] = 'КоммерческаяИнформация';
+        }
+
+        if ($xp->query('/КоммерческаяИнформация/Каталог/Товары/Товар')->length === 0) {
+            $missing[] = 'Каталог/Товары/Товар';
+        }
+
+        if (trim((string)$xp->evaluate('string(//*[local-name()="Товар"]/*[local-name()="Ид"])')) === '') {
+            $missing[] = 'Товар/Ид';
+        }
+
+        if (trim((string)$xp->evaluate('string(//*[local-name()="Товар"]/*[local-name()="Наименование"])')) === '') {
+            $missing[] = 'Товар/Наименование';
+        }
+
+        if (trim((string)$xp->evaluate('string(//*[local-name()="Товар"]/*[local-name()="Группы"]/*[local-name()="Ид"])')) === '') {
+            $missing[] = 'Товар/Группы/Ид';
+        }
+
+        if (trim((string)$xp->evaluate('string(//*[local-name()="Товар"]/*[local-name()="ЗначениеРеквизита"][*[local-name()="Наименование"]="CML2_CODE"]/*[local-name()="Значение"])')) === '') {
+            $missing[] = 'ЗначениеРеквизита/CML2_CODE';
+        }
+
+        if ($xp->query('/КоммерческаяИнформация/Каталог/Товары/Товар/ЗначенияСвойств')->length !== 1) {
+            $missing[] = 'ЗначенияСвойств';
+        }
+
         return $missing;
     }
 
-
-    /** @return list<string> */
-    private function templatePropertyProblems(DOMXPath $xp): array
-    {
-        $actual = [];
-        foreach ($xp->query('//Классификатор/Свойства/Свойство') as $property) {
-            $code = trim((string)$xp->evaluate('string(Наименование)', $property));
-            $id = trim((string)$xp->evaluate('string(Ид)', $property));
-            if ($code !== '') $actual[$code] = $id;
-        }
-
-        $problems = [];
-        foreach (self::PROPERTY_IDS as $code => $expectedId) {
-            if (!array_key_exists($code, $actual)) {
-                $problems[] = 'В XML-шаблоне отсутствует свойство ' . $code . ' с ID ' . $expectedId;
-            } elseif ($actual[$code] !== $expectedId) {
-                $problems[] = 'ID свойства ' . $code . ' в шаблоне не соответствует карте экспортёра: ожидается ' . $expectedId;
-            }
-        }
-        return $problems;
-    }
-
-    /** Проверить, что раздел товара присутствует в группах Классификатора шаблона; иначе — предупреждение. */
-    private function validateSection(DOMDocument $doc, string $section): void
-    {
-        $section = trim($section);
-        if ($section === '') return;
-        $xp = new DOMXPath($doc);
-        $groups = [];
-        foreach ($xp->query('//Классификатор/Группы//Группа/Ид') as $node) {
-            $id = trim($node->textContent);
-            if ($id !== '') $groups[$id] = true;
-        }
-        if ($groups && !isset($groups[$section])) {
-            $this->warnings[] = 'Раздел ' . $section . ' отсутствует в Классификаторе шаблона; убедитесь, что в инфоблоке 81 существует раздел с этим XML_ID.';
-        }
-    }
 
     public function filename(array $payload): string
     {
