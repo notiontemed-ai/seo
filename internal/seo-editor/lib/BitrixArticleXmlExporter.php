@@ -4,45 +4,10 @@ declare(strict_types=1);
 
 final class BitrixArticleXmlExporter
 {
-    private const CLASSIFIER_ID = '81';
+    private const CLASSIFIER_ID = 'medical_articles_v2';
     private const CLASSIFIER_NAME = 'Медицинские статьи';
     private const CATALOG_ID = '81';
     private const CATALOG_DESCRIPTION = '/articles2/#ELEMENT_CODE#/';
-
-    private const STANDARD_FIELD_SCHEMA = [
-        'CML2_ACTIVE' => [
-            'name' => 'БитриксАктивность',
-            'multiple' => false,
-        ],
-        'CML2_CODE' => [
-            'name' => 'Символьный код',
-            'multiple' => false,
-        ],
-        'CML2_SORT' => [
-            'name' => 'Сортировка',
-            'multiple' => false,
-        ],
-        'CML2_ACTIVE_FROM' => [
-            'name' => 'Начало активности',
-            'multiple' => false,
-        ],
-        'CML2_ACTIVE_TO' => [
-            'name' => 'Окончание активности',
-            'multiple' => false,
-        ],
-        'CML2_PREVIEW_TEXT' => [
-            'name' => 'Анонс',
-            'multiple' => false,
-        ],
-        'CML2_DETAIL_TEXT' => [
-            'name' => 'Описание',
-            'multiple' => false,
-        ],
-        'CML2_PREVIEW_PICTURE' => [
-            'name' => 'Картинка анонса',
-            'multiple' => false,
-        ],
-    ];
 
     private const PROPERTY_SCHEMA = [
         'ARTICLE_TYPE' => ['id' => '847', 'type' => 'Справочник', 'values' => ['disease' => 'Заболевание', 'symptom' => 'Симптом', 'diagnostics' => 'Диагностика', 'treatment_method' => 'Метод лечения', 'procedure' => 'Процедура', 'rehabilitation' => 'Упражнения и реабилитация', 'prevention' => 'Профилактика', 'patient_question' => 'Вопрос пациента', 'comparison' => 'Сравнение', 'surgical_treatment' => 'Оперативное лечение']],
@@ -100,11 +65,6 @@ final class BitrixArticleXmlExporter
         if ($xp->query('//Классификатор')->length === 0) $missing[] = 'В сформированном XML отсутствует Классификатор.';
         if (trim((string)$xp->evaluate('string(//Классификатор/Ид)')) !== self::CLASSIFIER_ID) $missing[] = 'В сформированном XML неверный Классификатор/Ид.';
 
-        foreach (self::STANDARD_FIELD_SCHEMA as $code => $schema) {
-            $query = '//Классификатор/Свойства/Свойство[Ид="' . $code . '" and Наименование="' . $schema['name'] . '"]';
-            if ($xp->query($query)->length === 0) $missing[] = 'В сформированном XML отсутствует стандартное поле ' . $code . ' (' . $schema['name'] . ') в классификаторе.';
-        }
-
         $actual = [];
         foreach ($xp->query('//Классификатор/Свойства/Свойство') as $property) {
             $code = trim((string)$xp->evaluate('string(Наименование)', $property));
@@ -121,18 +81,8 @@ final class BitrixArticleXmlExporter
         if ($xp->query('//Товар')->length === 0) $missing[] = 'В сформированном XML отсутствует Товар.';
         foreach (['Ид', 'Наименование'] as $tag) if (trim((string)$xp->evaluate('string(//Товар/' . $tag . ')')) === '') $missing[] = 'В сформированном XML пустой Товар/' . $tag . '.';
         if (trim((string)$xp->evaluate('string(//Товар/Группы/Ид)')) === '') $missing[] = 'В сформированном XML пустой Товар/Группы/Ид.';
-
-        if ($xp->query('//Товар/ЗначениеРеквизита[starts-with(Наименование, "CML2_")]')->length > 0) $missing[] = 'В сформированном XML стандартные поля CML2 ошибочно выгружены как ЗначениеРеквизита.';
-
-        $codeValue = trim((string)$xp->evaluate('string(//Товар/ЗначенияСвойств/ЗначенияСвойства[Ид="CML2_CODE"]/Значение)'));
-        $productCode = preg_replace('/^medical-article-(.*)-\d{8}$/', '$1', trim((string)$xp->evaluate('string(//Товар/Ид)')));
-        if ($codeValue === '') $missing[] = 'В сформированном XML пустой CML2_CODE товара.';
-        elseif ($productCode !== '' && $codeValue !== $productCode) $missing[] = 'В сформированном XML CML2_CODE товара не совпадает с нормализованным кодом статьи.';
-        foreach (['CML2_ACTIVE', 'CML2_SORT', 'CML2_PREVIEW_TEXT', 'CML2_DETAIL_TEXT'] as $code) {
-            if ($xp->query('//Товар/ЗначенияСвойств/ЗначенияСвойства[Ид="' . $code . '"]')->length === 0) $missing[] = 'В сформированном XML отсутствует стандартное поле товара ' . $code . '.';
-        }
-
-        $knownIds = array_merge(array_keys(self::STANDARD_FIELD_SCHEMA), array_column(self::PROPERTY_SCHEMA, 'id'));
+        if (trim((string)$xp->evaluate('string(//Товар/ЗначениеРеквизита[Наименование="CML2_CODE"]/Значение)')) === '') $missing[] = 'В сформированном XML пустой CML2_CODE товара.';
+        $knownIds = array_column(self::PROPERTY_SCHEMA, 'id');
         foreach ($xp->query('//Товар/ЗначенияСвойств/ЗначенияСвойства/Ид') as $idNode) {
             $id = trim($idNode->textContent);
             if (!in_array($id, $knownIds, true)) $missing[] = 'В сформированном XML значение свойства с неизвестным ID ' . $id . '.';
@@ -156,22 +106,12 @@ final class BitrixArticleXmlExporter
         $classifier->appendChild($doc->createElement('Ид', self::CLASSIFIER_ID));
         $classifier->appendChild($doc->createElement('Наименование', self::CLASSIFIER_NAME));
         $props = $classifier->appendChild($doc->createElement('Свойства'));
-        foreach (self::STANDARD_FIELD_SCHEMA as $code => $schema) $props->appendChild($this->createStandardFieldDefinition($doc, $code, $schema));
         foreach (self::PROPERTY_SCHEMA as $code => $schema) $props->appendChild($this->createPropertyDefinition($doc, $code, $schema));
         $groups = $classifier->appendChild($doc->createElement('Группы'));
         $group = $groups->appendChild($doc->createElement('Группа'));
         $group->appendChild($doc->createElement('Ид', $p['section']));
         $group->appendChild($doc->createElement('Наименование'))->appendChild($doc->createTextNode($p['section_name'] ?: $p['section']));
         return $classifier;
-    }
-
-    private function createStandardFieldDefinition(DOMDocument $doc, string $code, array $schema): DOMElement
-    {
-        $property = $doc->createElement('Свойство');
-        $property->appendChild($doc->createElement('Ид', $code));
-        $property->appendChild($doc->createElement('Наименование'))->appendChild($doc->createTextNode((string)$schema['name']));
-        $property->appendChild($doc->createElement('Множественное', !empty($schema['multiple']) ? 'true' : 'false'));
-        return $property;
     }
 
     private function createPropertyDefinition(DOMDocument $doc, string $code, array $schema): DOMElement
@@ -254,20 +194,15 @@ final class BitrixArticleXmlExporter
         $product = $doc->createElement('Товар');
         $product->appendChild($doc->createElement('Ид', 'medical-article-' . $p['code'] . '-' . gmdate('Ymd')));
         $product->appendChild($doc->createElement('Наименование'))->appendChild($doc->createTextNode($p['name']));
-        $product->appendChild($doc->createElement('БитриксТеги'));
         $groups = $product->appendChild($doc->createElement('Группы'));
         $groups->appendChild($doc->createElement('Ид', $p['section']));
-        $product->appendChild($doc->createElement('Картинка'));
         $product->appendChild($doc->createElement('Описание'))->appendChild($doc->createTextNode($p['preview']));
+        $this->requisite($doc, $product, 'CML2_ACTIVE', 'false');
+        $this->requisite($doc, $product, 'CML2_SORT', '500');
+        $this->requisite($doc, $product, 'CML2_CODE', $p['code']);
+        $this->requisite($doc, $product, 'CML2_PREVIEW_TEXT', $p['preview'], 'text');
+        $this->requisite($doc, $product, 'CML2_DETAIL_TEXT', $p['detail'], 'html');
         $props = $product->appendChild($doc->createElement('ЗначенияСвойств'));
-        $this->standardField($doc, $props, 'CML2_ACTIVE', 'false');
-        $this->standardField($doc, $props, 'CML2_CODE', trim($p['code']));
-        $this->standardField($doc, $props, 'CML2_SORT', '500');
-        $this->standardField($doc, $props, 'CML2_ACTIVE_FROM', '');
-        $this->standardField($doc, $props, 'CML2_ACTIVE_TO', '');
-        $this->standardField($doc, $props, 'CML2_PREVIEW_TEXT', $p['preview'], 'text');
-        $this->standardField($doc, $props, 'CML2_DETAIL_TEXT', $p['detail'], 'html');
-        $this->standardField($doc, $props, 'CML2_PREVIEW_PICTURE', '');
         foreach ([
             'ARTICLE_TYPE'=>[$p['article_type']], 'PRIMARY_QUERY'=>[$p['primary_query']], 'SECONDARY_QUERIES'=>$p['secondary_queries'],
             'SEARCH_INTENT'=>[$p['search_intent']], 'SHORT_ANSWER'=>[$p['short_answer']], 'REGION'=>[$p['region']],
@@ -282,13 +217,12 @@ final class BitrixArticleXmlExporter
         return $product;
     }
 
-    private function standardField(DOMDocument $doc, DOMElement $properties, string $code, string $value, ?string $type = null): void
+    private function requisite(DOMDocument $doc, DOMElement $product, string $name, string $value, ?string $type = null): void
     {
-        if (!array_key_exists($code, self::STANDARD_FIELD_SCHEMA)) throw new InvalidArgumentException('Неизвестное стандартное поле XML: ' . $code);
-        $node = $properties->appendChild($doc->createElement('ЗначенияСвойства'));
-        $node->appendChild($doc->createElement('Ид', $code));
-        $node->appendChild($doc->createElement('Значение'))->appendChild($doc->createTextNode($value));
+        $node = $product->appendChild($doc->createElement('ЗначениеРеквизита'));
+        $node->appendChild($doc->createElement('Наименование', $name));
         if ($type !== null) $node->appendChild($doc->createElement('Тип', $type));
+        $node->appendChild($doc->createElement('Значение'))->appendChild($doc->createTextNode($value));
     }
 
     private function propertyId(string $code): string
