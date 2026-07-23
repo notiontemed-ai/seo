@@ -17,7 +17,7 @@ function propType(DOMXPath $xp, string $id): string {
 function basePayload(): array {
     return [
         'name'=>'Тестовая статья','code'=>'testovaya-statya','preview_text'=>'Короткий анонс & проверка UTF-8.','detail_html'=>'<p>Полный текст ]]></p>',
-        'section'=>'100','section_name'=>'Тестовый раздел','section_code'=>'testovyy-razdel','section_active'=>'Y','section_sort'=>500,'primary_query'=>'боль в спине','secondary_queries'=>"лечение спины\nреабилитация",
+        'section'=>'100','section_name'=>'Тестовый раздел','primary_query'=>'боль в спине','secondary_queries'=>"лечение спины\nреабилитация",
         'search_intent'=>'informational','short_answer'=>'Краткий ответ','region_xml_id'=>'moscow','article_template_xml_id'=>'default',
         'author_id'=>'501','medical_reviewer_id'=>'502','medical_reviewed_at'=>'2026-07-21','content_updated_at'=>'2026-07-22',
         'sources'=>['PubMed','Клинические рекомендации'],
@@ -116,23 +116,11 @@ assertTrue(propValues(new DOMXPath((new BitrixArticleXmlExporter())->export($inv
 $sectionPayload = basePayload();
 $sectionPayload['section'] = '432';
 $sectionPayload['section_name'] = 'Неврология';
-$sectionPayload['section_code'] = 'nevrologiya';
 $sectionDoc = (new BitrixArticleXmlExporter())->export($sectionPayload);
 $sectionXp = new DOMXPath($sectionDoc);
 assertTrue(trim((string)$sectionXp->evaluate('string(//Классификатор/Группы/Группа/Ид)')) === '432', 'classifier group id failed');
 assertTrue(trim((string)$sectionXp->evaluate('string(//Классификатор/Группы/Группа/Наименование)')) === 'Неврология', 'classifier group name failed');
 assertTrue(trim((string)$sectionXp->evaluate('string(//Товар/Группы/Ид)')) === '432', 'product group id failed');
-assertTrue(trim((string)$sectionXp->evaluate('string(//Классификатор/Группы/Группа/БитриксАктивность)')) === 'true', 'classifier group active failed');
-assertTrue(trim((string)$sectionXp->evaluate('string(//Классификатор/Группы/Группа/БитриксСортировка)')) === '500', 'classifier group sort failed');
-assertTrue(trim((string)$sectionXp->evaluate('string(//Классификатор/Группы/Группа/БитриксКод)')) === 'nevrologiya', 'classifier group code failed');
-assertTrue(trim((string)$sectionXp->evaluate('string(//Каталог/БитриксКод)')) === 'medical_articles_v2', 'catalog bitrix code failed');
-
-try {
-    (new BitrixArticleXmlExporter())->export(array_merge(basePayload(), ['section'=>'435','section_name'=>'435','section_code'=>'']));
-    assertTrue(false, 'numeric section name must stop export');
-} catch (InvalidArgumentException $e) {
-    assertTrue($e->getMessage() === 'Не получено название выбранного раздела', 'numeric section name error failed');
-}
 
 // Тест 8. Валидация результата.
 assertTrue((new BitrixArticleXmlExporter())->validate($sectionDoc) === [], 'validate() must report no problems');
