@@ -212,3 +212,8 @@ a { color: var(--accent-dark); }
 .case-topic-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .case-topic-fit { font-style: italic; }
 .transcript-text { white-space: pre-wrap; font-size: 13px; }
+
+/* ── Генерация: режимы встроенный/внешний ── */
+.mode-switch { display: flex; gap: 8px; margin-bottom: 14px; }
+.external-assistant { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+.external-assistant .field { width: 100%; }
