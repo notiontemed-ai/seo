@@ -356,6 +356,7 @@ $n8nActions = [
     'start_external_uniqueness',
     'get_external_uniqueness',
     'assistant_chat',
+    'suggest_anchor',
     'draft_create',
     'draft_save_version',
     'draft_get',
@@ -539,9 +540,9 @@ if ($action === 'create_or_update_draft') {
     proxyRelay($result, 'TEMED SEO API');
 }
 
-// Каннибализация и внутренняя уникальность считаются нативно в PHP
-// (TEMED SEO API POST), n8n эти алгоритмы не реализует.
-if ($action === 'cannibalization_check') {
+// Каннибализация, перелинковка и внутренняя уникальность считаются нативно в
+// PHP (TEMED SEO API POST), n8n эти алгоритмы не реализует.
+if ($action === 'cannibalization_check' || $action === 'linking_candidates') {
     if ($apiUrl === '' || $apiToken === '') {
         proxySendJson(
             [
@@ -643,7 +644,7 @@ proxySendJson(
     [
         'success' => false,
         'error' => 'Недопустимое действие',
-        'allowed_actions' => array_merge(['check_internal_uniqueness', 'cannibalization_check', 'create_or_update_draft'], $n8nActions),
+        'allowed_actions' => array_merge(['check_internal_uniqueness', 'cannibalization_check', 'linking_candidates', 'create_or_update_draft'], $n8nActions),
     ],
     400
 );
