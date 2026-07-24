@@ -29,6 +29,7 @@ browser → internal/seo-editor/proxy.php → local/api/seo/index.php (write_tok
 | `article_content` | object | блоки `article_content` v2 — HTML соберётся на сервере через `HtmlRenderer` (см. `docs/article-content.md`) |
 | `section_id` | int | ID раздела инфоблока 81 (проверяется на существование) |
 | `properties` | map | `код свойства → значение|значения` |
+| `seo` | object | SEO-мета элемента: `{title, description}` → `IPROPERTY_TEMPLATES` (`ELEMENT_META_TITLE`/`ELEMENT_META_DESCRIPTION`); допускаются плоские алиасы `seo_title`/`meta_description`; пустые значения не передаются и не затирают существующую мету |
 
 - ID инфоблока из запроса **не принимается**.
 - `ACTIVE` всегда `N` на сервере; значение из запроса игнорируется.
