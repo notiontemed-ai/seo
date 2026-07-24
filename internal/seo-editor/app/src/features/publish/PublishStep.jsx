@@ -3,51 +3,41 @@ import { useStore } from '../../store/useStore.js';
 import { api } from '../../api/client.js';
 import { Button, Spinner, Modal, Notice, Tag } from '../../components/ui.jsx';
 
-function buildProperties(article, structures) {
-  const structure = structures.find((s) => s.id === article.structure_id);
-  const props = {};
-  const setIf = (k, v) => {
-    if (v !== '' && v != null && v !== 0 && !(Array.isArray(v) && v.length === 0)) props[k] = v;
-  };
-  setIf('ARTICLE_TYPE', article.article_type);
-  setIf('PRIMARY_QUERY', article.primary_query);
-  setIf('SECONDARY_QUERIES', article.secondary_queries);
-  setIf('SEARCH_INTENT', article.search_intent);
-  setIf('REGION', article.region);
-  setIf('AUTHOR', article.author_id);
-  setIf('MEDICAL_REVIEWER', article.medical_reviewer_id);
-  if (structure) {
-    setIf('ARTICLE_STRUCTURE', structure.id);
-    setIf('ARTICLE_STRUCTURE_NAME', structure.name);
-    setIf('ARTICLE_STRUCTURE_VERSION', structure.version || structure.v || '');
+import { buildDraftPayload } from '../../lib/publishPayload.js';
+import { checkState } from '../../lib/checkFreshness.js';
+
+const CHECK_LABELS = {
+  cannibalization: 'Каннибализация',
+  textru: 'TEXT.RU',
+  linking: 'Перелинковка',
+};
+
+// Предупреждения о проверках, которые устарели или не запускались (этап 8.4).
+function checkWarnings(checkHashes, article) {
+  const warnings = [];
+  for (const [kind, label] of Object.entries(CHECK_LABELS)) {
+    const state = checkState(checkHashes[kind], article);
+    if (state === 'missing') warnings.push(label + ': проверка не запускалась');
+    if (state === 'stale') warnings.push(label + ': результат устарел, текст изменился');
   }
-  setIf('SHOW_FORM', article.show_form);
-  setIf('FORM_ID', article.form_id);
-  setIf('FORM_BUTTON_TEXT', article.form_button_text);
-  return props;
+  return warnings;
 }
 
 export default function PublishStep() {
-  const { article, structures } = useStore();
+  const { article, structures, checkHashes } = useStore();
   const [confirm, setConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
 
   const canPublish = article.name && article.code && article.section_id && article.blocks.length;
+  const staleWarnings = checkWarnings(checkHashes, article);
 
   const publish = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await api.createDraft({
-        code: article.code,
-        name: article.name,
-        preview_text: article.preview_text,
-        section_id: article.section_id,
-        article_content: { schema_version: '2.0', blocks: article.blocks },
-        properties: buildProperties(article, structures),
-      });
+      const res = await api.createDraft(buildDraftPayload(article, structures));
       setResult(res.data || res);
       setConfirm(false);
     } catch (e) {
@@ -64,6 +54,9 @@ export default function PublishStep() {
       <p className="muted">Запись создаёт/обновляет НЕАКТИВНЫЙ элемент в инфоблоке 81. Активные элементы не изменяются.</p>
 
       {!canPublish && <Notice notice={{ type: 'warn', text: 'Заполните название, код, раздел и добавьте хотя бы один блок.' }} />}
+      {staleWarnings.length > 0 && (
+        <Notice notice={{ type: 'warn', text: 'Проверки: ' + staleWarnings.join('; ') + '.' }} />
+      )}
       {error && <Notice notice={{ type: 'error', text: error }} />}
 
       <Button variant="primary" onClick={() => setConfirm(true)} disabled={!canPublish || loading}>
@@ -114,6 +107,13 @@ export default function PublishStep() {
           <dt>ACTIVE</dt>
           <dd>N (всегда)</dd>
         </dl>
+        {staleWarnings.length > 0 && (
+          <ul className="warn-list">
+            {staleWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        )}
       </Modal>
     </div>
   );

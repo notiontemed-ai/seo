@@ -1397,6 +1397,7 @@ function getCapabilities(): array
                 'target_iblock' => 'articles',
                 'active' => 'N',
                 'allowed_property_codes' => ArticleDraftWriter::allowedPropertyCodes(),
+                'seo_meta' => ['ELEMENT_META_TITLE', 'ELEMENT_META_DESCRIPTION'],
             ],
         ],
         'security' => [

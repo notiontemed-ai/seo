@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useStore } from '../../store/useStore.js';
 import { api } from '../../api/client.js';
 import { Button, Spinner, Tag, Notice } from '../../components/ui.jsx';
+import { contentHash, checkState } from '../../lib/checkFreshness.js';
+import { StaleTag } from '../checks/ChecksStep.jsx';
 
 const LOAD_TONE = { green: 'ok', yellow: 'warn', red: 'danger' };
 
@@ -31,14 +33,17 @@ function buildBrief(article, linking, selectedIds) {
 }
 
 export default function LinkingStep() {
-  const { article, linking, setLinking, linkingSelected, toggleLinkingSelected, setNotice } = useStore();
+  const { article, linking, setLinking, linkingSelected, toggleLinkingSelected, setNotice, checkHashes, setCheckHash } = useStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const linkingState = checkState(checkHashes.linking, article);
 
   const run = async () => {
     setLoading(true);
     setError('');
     try {
+      const hash = contentHash(article);
       const res = await api.linking({
         article: {
           element_id: article.element_id || undefined,
@@ -51,6 +56,7 @@ export default function LinkingStep() {
         limit: 20,
       });
       setLinking(res.data || res);
+      setCheckHash('linking', hash);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -82,7 +88,7 @@ export default function LinkingStep() {
   return (
     <div className="step-body">
       <div className="step-head">
-        <h2 className="step-title">5. Перелинковка</h2>
+        <h2 className="step-title">5. Перелинковка <StaleTag state={linkingState} /></h2>
         <Button variant="primary" onClick={run} disabled={loading}>
           {loading ? <Spinner label="Поиск доноров…" /> : 'Найти доноров'}
         </Button>

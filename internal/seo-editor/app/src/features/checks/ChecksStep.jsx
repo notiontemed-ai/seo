@@ -2,14 +2,24 @@ import React, { useState } from 'react';
 import { useStore } from '../../store/useStore.js';
 import { api } from '../../api/client.js';
 import { Button, Spinner, Tag, Notice, Collapsible } from '../../components/ui.jsx';
+import { contentHash, checkState, saveTextruSession, bumpTextruAttempt, clearTextruSession } from '../../lib/checkFreshness.js';
 
 const RISK_TONE = { high: 'danger', medium: 'warn', low: 'neutral' };
 
+// Пометка устаревания результата проверки (этап 8.4).
+export function StaleTag({ state }) {
+  if (state !== 'stale') return null;
+  return <Tag tone="warn">устарел, текст изменился</Tag>;
+}
+
 export default function ChecksStep() {
-  const { article, cannibalization, setCannibalization, textru, setTextru, debug } = useStore();
+  const { article, cannibalization, setCannibalization, textru, setTextru, debug, checkHashes, setCheckHash } = useStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [textruLoading, setTextruLoading] = useState(false);
+
+  const cannibalizationState = checkState(checkHashes.cannibalization, article);
+  const textruState = checkState(checkHashes.textru, article);
 
   const articlePayload = {
     name: article.name,
@@ -23,9 +33,11 @@ export default function ChecksStep() {
     setLoading(true);
     setError('');
     try {
+      const hash = contentHash(article);
       const exclude = article.element_id ? { source: article.source, element_id: article.element_id } : undefined;
       const res = await api.cannibalization({ article: articlePayload, exclude, max_matches: 50 });
       setCannibalization(res.data || res);
+      setCheckHash('cannibalization', hash);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -37,8 +49,14 @@ export default function ChecksStep() {
     setTextruLoading(true);
     setError('');
     try {
+      const hash = contentHash(article);
       const res = await api.startExternalUniqueness({ article: articlePayload });
-      setTextru(res.data || res);
+      const data = res.data || res;
+      setTextru(data);
+      setCheckHash('textru', hash);
+      // Активная проверка переживает перезагрузку страницы (sessionStorage).
+      const uid = data.uid || data.text_uid;
+      if (uid) saveTextruSession({ text_uid: uid, content_hash: hash, attempt: 0 });
     } catch (e) {
       setError(e.message);
     } finally {
@@ -51,7 +69,13 @@ export default function ChecksStep() {
     try {
       const uid = textru?.uid || textru?.text_uid;
       const res = await api.getExternalUniqueness({ uid });
-      setTextru(res.data || res);
+      const data = res.data || res;
+      setTextru(data);
+      if (data.uniqueness_percent != null) {
+        clearTextruSession(); // проверка завершена — активной больше нет
+      } else {
+        bumpTextruAttempt();
+      }
     } catch (e) {
       setError(e.message);
     } finally {
@@ -65,7 +89,7 @@ export default function ChecksStep() {
 
       <div className="check-block">
         <div className="step-head">
-          <h3>Каннибализация</h3>
+          <h3>Каннибализация <StaleTag state={cannibalizationState} /></h3>
           <Button variant="primary" onClick={runCannibalization} disabled={loading}>
             {loading ? <Spinner label="Проверка…" /> : 'Проверить'}
           </Button>
@@ -108,7 +132,7 @@ export default function ChecksStep() {
 
       <div className="check-block">
         <div className="step-head">
-          <h3>TEXT.RU (внешняя проверка)</h3>
+          <h3>TEXT.RU (внешняя проверка) <StaleTag state={textruState} /></h3>
           <div className="row-actions">
             <Button onClick={runTextru} disabled={textruLoading}>Запустить</Button>
             {textru && <Button variant="ghost" onClick={refreshTextru} disabled={textruLoading}>Обновить статус</Button>}
@@ -119,7 +143,11 @@ export default function ChecksStep() {
             {textru.uniqueness_percent != null ? (
               <Tag tone="neutral">уникальность: {textru.uniqueness_percent}%</Tag>
             ) : (
-              <span className="muted">Статус: {textru.status || 'в очереди'}. Обновите статус позже.</span>
+              <span className="muted">
+                {textru.status === 'restored'
+                  ? 'Проверка была запущена ранее (восстановлена после перезагрузки). Обновите статус.'
+                  : 'Статус: ' + (textru.status || 'в очереди') + '. Обновите статус позже.'}
+              </span>
             )}
             {debug && <pre className="debug-json">{JSON.stringify(textru, null, 2)}</pre>}
           </div>

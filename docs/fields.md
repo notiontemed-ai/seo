@@ -46,6 +46,17 @@
 Списочные значения передаются по XML_ID варианта и валидируются через
 `CIBlockPropertyEnum`; при несовпадении значение пропускается с warning.
 
+## SEO-мета элемента
+
+SEO title и meta description — не свойства инфоблока, а IPROPERTY элемента.
+Write-API принимает их в `seo:{title,description}` (или плоские
+`seo_title`/`meta_description`) и передаёт в Bitrix через
+`IPROPERTY_TEMPLATES` (`ELEMENT_META_TITLE`, `ELEMENT_META_DESCRIPTION`).
+В редакторе поля находятся на шаге «Задача» (секция «SEO-мета»).
+
+Свойство `SOURCES` (857) в редакторе не имеет отдельного поля: значения
+синхронизируются из блока `sources` при сборке payload публикации.
+
 ## Структуры статей
 
 `local/api/seo/data/article_structures.json` — массив `configs`. Каждая структура

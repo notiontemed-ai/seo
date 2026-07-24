@@ -181,6 +181,64 @@ assertTrue($sentProps['SECONDARY_QUERIES'] === ['лечение спины', 'р
 assertTrue($sentProps['RELATED_ARTICLES_V2'] === [202, 203], 'multiple E values as ints');
 assertTrue($sentProps['MEDICAL_REVIEWED_AT'] === '21.07.2026', 'date normalized to Bitrix format');
 
+// ── 7a. Полный allowlist этапа 8.1: все восстановленные коды принимаются ─────
+$stage81Codes = [
+    'SHORT_ANSWER', 'SOURCES', 'RELATED_ARTICLES', 'RELATED_ARTICLES_V2',
+    'RELATED_SERVICES', 'RELATED_CLINICS', 'MEDICAL_REVIEWED_AT',
+    'CONTENT_UPDATED_AT', 'FEATURED_IMAGE_ALT',
+];
+$allowed = ArticleDraftWriter::allowedPropertyCodes();
+foreach ($stage81Codes as $code81) {
+    assertTrue(in_array($code81, $allowed, true), 'allowlist must contain ' . $code81);
+}
+$gw = new FakeWriteGateway();
+$writer = new ArticleDraftWriter(makeConfig(), $gw);
+$result = $writer->write(basePayload() + [
+    'properties' => [
+        'SHORT_ANSWER' => 'Краткий ответ',
+        'SOURCES' => ['https://pubmed.ncbi.nlm.nih.gov/1', 'https://who.int/2'],
+        'RELATED_ARTICLES' => [301, 302],
+        'RELATED_SERVICES' => [401],
+        'RELATED_CLINICS' => [501],
+        'CONTENT_UPDATED_AT' => '2026-07-24',
+        'FEATURED_IMAGE_ALT' => 'МРТ снимок поясничного отдела',
+    ],
+]);
+$sentProps = $gw->props[0]['props'];
+assertTrue($sentProps['SHORT_ANSWER'] === 'Краткий ответ', 'SHORT_ANSWER written');
+assertTrue($sentProps['SOURCES'] === ['https://pubmed.ncbi.nlm.nih.gov/1', 'https://who.int/2'], 'SOURCES written as multiple');
+assertTrue($sentProps['RELATED_ARTICLES'] === [301, 302], 'RELATED_ARTICLES written');
+assertTrue($sentProps['RELATED_SERVICES'] === [401], 'RELATED_SERVICES written');
+assertTrue($sentProps['RELATED_CLINICS'] === [501], 'RELATED_CLINICS written');
+assertTrue($sentProps['CONTENT_UPDATED_AT'] === '24.07.2026', 'CONTENT_UPDATED_AT normalized');
+assertTrue($sentProps['FEATURED_IMAGE_ALT'] === 'МРТ снимок поясничного отдела', 'FEATURED_IMAGE_ALT written');
+assertTrue($result['warnings'] === [], 'stage 8.1 codes produce no warnings');
+
+// ── 7b. SEO-мета (IPROPERTY_TEMPLATES) ──────────────────────────────────────
+$gw = new FakeWriteGateway();
+$writer = new ArticleDraftWriter(makeConfig(), $gw);
+$writer->write(basePayload() + [
+    'seo' => ['title' => 'SEO заголовок', 'description' => 'Описание для выдачи'],
+]);
+$iprop = $gw->added[0]['fields']['IPROPERTY_TEMPLATES'] ?? null;
+assertTrue(is_array($iprop), 'seo meta lands in IPROPERTY_TEMPLATES');
+assertTrue($iprop['ELEMENT_META_TITLE'] === 'SEO заголовок', 'meta title passed');
+assertTrue($iprop['ELEMENT_META_DESCRIPTION'] === 'Описание для выдачи', 'meta description passed');
+
+// Плоские алиасы seo_title / meta_description тоже принимаются.
+$gw = new FakeWriteGateway();
+$writer = new ArticleDraftWriter(makeConfig(), $gw);
+$writer->write(basePayload() + ['seo_title' => 'Плоский title', 'meta_description' => 'Плоское описание']);
+$iprop = $gw->added[0]['fields']['IPROPERTY_TEMPLATES'] ?? null;
+assertTrue(is_array($iprop) && $iprop['ELEMENT_META_TITLE'] === 'Плоский title', 'flat seo_title alias works');
+
+// Пустая мета не затирает существующую: ключ не передаётся вовсе.
+$gw = new FakeWriteGateway();
+$gw->elements['test-article'] = ['id' => 778, 'active' => 'N', 'name' => 'Старое'];
+$writer = new ArticleDraftWriter(makeConfig(), $gw);
+$writer->write(basePayload() + ['seo' => ['title' => '', 'description' => '  ']]);
+assertTrue(!array_key_exists('IPROPERTY_TEMPLATES', $gw->updated[0]['fields']), 'empty seo meta not sent on update');
+
 // ── 8. Защита обязательных полей ────────────────────────────────────────────
 $gw = new FakeWriteGateway();
 $writer = new ArticleDraftWriter(makeConfig(), $gw);

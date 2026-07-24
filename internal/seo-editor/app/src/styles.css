@@ -190,3 +190,30 @@ a { color: var(--accent-dark); }
 .draft-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
 
 .boot-loading, .boot-error { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+
+/* ── MultiPicker (RELATED_*) ── */
+.subsection-title { margin: 18px 0 10px; font-size: 15px; border-top: 1px solid var(--border); padding-top: 14px; }
+.multipicker { position: relative; }
+.multipicker-input { position: relative; }
+.multipicker-results { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 18px rgba(15, 27, 35, 0.12); max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; }
+.multipicker-item { text-align: left; padding: 8px 10px; background: none; border: 0; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 13px; }
+.multipicker-item:last-child { border-bottom: 0; }
+.multipicker-item:hover { background: #f3f6f3; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; background: #e6f4f3; border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px 3px 10px; font-size: 12px; }
+.chip-remove { background: none; border: 0; cursor: pointer; font-size: 14px; line-height: 1; color: var(--muted); padding: 0; }
+.chip-remove:hover { color: #b3261e; }
+
+/* ── Кейсовый вход (транскрибация) ── */
+.case-result { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.case-summary { border: 1px solid var(--border); border-left: 3px solid #2a7d72; border-radius: 8px; padding: 10px 12px; background: #f7faf9; }
+.case-summary h4, .case-topics h4 { margin: 0 0 6px; }
+.case-topic { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.case-topic-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.case-topic-fit { font-style: italic; }
+.transcript-text { white-space: pre-wrap; font-size: 13px; }
+
+/* ── Генерация: режимы встроенный/внешний ── */
+.mode-switch { display: flex; gap: 8px; margin-bottom: 14px; }
+.external-assistant { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; margin-bottom: 12px; }
+.external-assistant .field { width: 100%; }

@@ -131,3 +131,56 @@ export const CATEGORIES = [
   { key: 'semantic', label: 'Смысловые' },
   { key: 'system', label: 'Служебные' },
 ];
+
+// Валидация article_content v2 — те же правила, что у встроенной генерации
+// в n8n («Parse model JSON»): типы блоков из библиотеки, обязателен хотя бы
+// один h2 и один p; блоки с невалидной схемой отбрасываются с warning;
+// expert_opinion с doctor_id вне справочника — отбрасывается.
+export function validateArticleContent(content, opts = {}) {
+  const warnings = [];
+  const errors = [];
+
+  if (!content || typeof content !== 'object' || !Array.isArray(content.blocks)) {
+    return { valid: false, blocks: [], warnings, errors: ['В результате нет article_content.blocks'] };
+  }
+
+  const doctorIds = Array.isArray(opts.doctorIds) ? new Set(opts.doctorIds.map(Number)) : null;
+  const blocks = [];
+
+  content.blocks.forEach((block, i) => {
+    const label = 'Блок ' + (i + 1);
+    if (!block || typeof block !== 'object' || typeof block.type !== 'string') {
+      warnings.push(label + ': не объект с типом — отброшен');
+      return;
+    }
+    const meta = BLOCK_LIBRARY[block.type];
+    if (!meta) {
+      warnings.push(label + ': неизвестный тип «' + block.type + '» — отброшен');
+      return;
+    }
+    // Лёгкая проверка формы: контейнерные поля должны быть нужного JS-типа.
+    for (const field of meta.fields) {
+      const value = block[field.key];
+      if (value == null) continue;
+      const isList = field.kind === 'stringlist' || field.kind === 'items' || field.kind === 'table';
+      if (isList && !Array.isArray(value)) {
+        warnings.push(label + ' (' + block.type + '): поле «' + field.key + '» должно быть массивом — блок отброшен');
+        return;
+      }
+      if ((field.kind === 'text' || field.kind === 'textarea') && typeof value !== 'string') {
+        warnings.push(label + ' (' + block.type + '): поле «' + field.key + '» должно быть строкой — блок отброшен');
+        return;
+      }
+    }
+    if (block.type === 'expert_opinion' && doctorIds && !doctorIds.has(Number(block.doctor_id))) {
+      warnings.push(label + ': expert_opinion с doctor_id вне справочника врачей — отброшен');
+      return;
+    }
+    blocks.push(block);
+  });
+
+  if (!blocks.some((b) => b.type === 'h2')) errors.push('Нужен хотя бы один блок h2');
+  if (!blocks.some((b) => b.type === 'p')) errors.push('Нужен хотя бы один блок p');
+
+  return { valid: errors.length === 0, blocks, warnings, errors };
+}
