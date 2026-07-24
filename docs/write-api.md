@@ -25,7 +25,8 @@ browser → internal/seo-editor/proxy.php → local/api/seo/index.php (write_tok
 | `code` | string | символьный код (латиница/цифры/`_`/`-`) |
 | `name` | string | название статьи |
 | `preview_text` | string | анонс (plain) |
-| `detail_html` | string | готовый HTML, собранный из блоков |
+| `detail_html` | string | готовый HTML (обратная совместимость) |
+| `article_content` | object | блоки `article_content` v2 — HTML соберётся на сервере через `HtmlRenderer` (см. `docs/article-content.md`) |
 | `section_id` | int | ID раздела инфоблока 81 (проверяется на существование) |
 | `properties` | map | `код свойства → значение|значения` |
 
