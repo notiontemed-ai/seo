@@ -68,6 +68,41 @@ final class ArticleContent
         return isset(self::CATALOG[$type]);
     }
 
+    /**
+     * Плоский текст всех блоков (для проверок каннибализации/уникальности).
+     *
+     * @param array<string,mixed> $content
+     */
+    public static function toPlainText(array $content): string
+    {
+        $parts = [];
+        foreach (($content['blocks'] ?? []) as $block) {
+            if (is_array($block)) {
+                self::collectStrings($block, $parts);
+            }
+        }
+        return trim(implode(' ', $parts));
+    }
+
+    /** @param array<int,string> $parts */
+    private static function collectStrings(array $node, array &$parts): void
+    {
+        static $skip = ['type', 'ordered', 'source_index', 'doctor_id', 'related_service_id', '_anchor'];
+        foreach ($node as $key => $value) {
+            if (in_array((string)$key, $skip, true)) {
+                continue;
+            }
+            if (is_string($value)) {
+                $value = trim($value);
+                if ($value !== '') {
+                    $parts[] = $value;
+                }
+            } elseif (is_array($value)) {
+                self::collectStrings($value, $parts);
+            }
+        }
+    }
+
     public static function isMedical(string $type): bool
     {
         return (bool)(self::CATALOG[$type]['medical'] ?? false);
