@@ -203,3 +203,12 @@ a { color: var(--accent-dark); }
 .chip { display: inline-flex; align-items: center; gap: 6px; background: #e6f4f3; border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px 3px 10px; font-size: 12px; }
 .chip-remove { background: none; border: 0; cursor: pointer; font-size: 14px; line-height: 1; color: var(--muted); padding: 0; }
 .chip-remove:hover { color: #b3261e; }
+
+/* ── Кейсовый вход (транскрибация) ── */
+.case-result { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.case-summary { border: 1px solid var(--border); border-left: 3px solid #2a7d72; border-radius: 8px; padding: 10px 12px; background: #f7faf9; }
+.case-summary h4, .case-topics h4 { margin: 0 0 6px; }
+.case-topic { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-top: 8px; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.case-topic-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.case-topic-fit { font-style: italic; }
+.transcript-text { white-space: pre-wrap; font-size: 13px; }

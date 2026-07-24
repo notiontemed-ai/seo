@@ -122,6 +122,17 @@ export const useStore = create((set, get) => ({
       return { article: { ...s.article, blocks }, dirty: true };
     }),
 
+  // ── Кейсовый вход (этап 8.3): результат транскрибации живёт в store,
+  // чтобы переживать закрытие боковой панели ──
+  caseResult: null, // {transcript, summary, topics:[{title, primary_query, fit, risk}]}
+  setCaseResult: (caseResult) => set({ caseResult }),
+  setTopicRisk: (index, risk) =>
+    set((s) => {
+      if (!s.caseResult) return {};
+      const topics = (s.caseResult.topics || []).map((t, i) => (i === index ? { ...t, risk } : t));
+      return { caseResult: { ...s.caseResult, topics } };
+    }),
+
   setMedQuestions: (medQuestions) => set({ medQuestions }),
   setCannibalization: (cannibalization) => set({ cannibalization }),
   setTextru: (textru) => set({ textru }),
