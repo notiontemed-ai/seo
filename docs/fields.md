@@ -19,7 +19,7 @@
 
 | код | ID | тип | примечание |
 |-----|----|-----|-----------|
-| ARTICLE_TYPE | 847 | L | |
+| ARTICLE_TYPE | 847 | L | удалено из редактора (ТЗ v1.1): не заполняется, в экспорте пусто |
 | PRIMARY_QUERY | 848 | S | |
 | SECONDARY_QUERIES | 849 | S×N | |
 | SEARCH_INTENT | 850 | L | |
@@ -52,14 +52,17 @@ SEO title и meta description — не свойства инфоблока, а I
 Write-API принимает их в `seo:{title,description}` (или плоские
 `seo_title`/`meta_description`) и передаёт в Bitrix через
 `IPROPERTY_TEMPLATES` (`ELEMENT_META_TITLE`, `ELEMENT_META_DESCRIPTION`).
-В редакторе поля находятся на шаге «Задача» (секция «SEO-мета»).
+В редакторе SEO title и meta description заполняются после генерации в секции
+«Мета и анонс» на шаге «Генерация» (ТЗ v1.1), а не на шаге «Задача».
 
 Свойство `SOURCES` (857) в редакторе не имеет отдельного поля: значения
 синхронизируются из блока `sources` при сборке payload публикации.
 
 ## Структуры статей
 
-`local/api/seo/data/article_structures.json` — массив `configs`. Каждая структура
-задаёт `intent`, `recommended_blocks` (порядок смысловых блоков) и `forbidden`.
-Отдаётся действием `article_structures`; используется ИИ при генерации и
-редактором при выборе структуры. Библиотека блоков — см. `article-content.md`.
+`internal/seo-editor/data/article_structures.json` — массив `configs` (9 SEO-архетипов
+по ТЗ v1.1: 3 интента × 3 структуры). Каждая структура задаёт `intent`, `structure`
+(порядок блоков с `required`/`repeat`) и `forbidden`. Конфиг перенесён из публичного
+API в редактор (ТЗ 4.1) и отдаётся локально через `proxy.php?action=article_structures`;
+используется ИИ при генерации и редактором при выборе структуры (интент → карточки
+структур → детали). Библиотека блоков — см. `article-content.md`.

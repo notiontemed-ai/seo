@@ -1251,103 +1251,6 @@ function getDictionaries(array $config): array
     ];
 }
 
-
-function temedSeoLoadArticleStructures(): array
-{
-    static $cache = null;
-
-    if (is_array($cache)) {
-        return $cache;
-    }
-
-    $filePath = dirname(__DIR__) . '/data/article_structures.json';
-
-    if (!is_file($filePath) || !is_readable($filePath)) {
-        temedSeoSendError(
-            'Файл конфигурации структур статей недоступен',
-            500
-        );
-    }
-
-    $json = file_get_contents($filePath);
-
-    if ($json === false || trim($json) === '') {
-        temedSeoSendError(
-            'Файл конфигурации структур статей пуст или не читается',
-            500
-        );
-    }
-
-    $data = json_decode($json, true);
-
-    if (json_last_error() !== JSON_ERROR_NONE || !is_array($data)) {
-        error_log(
-            '[TEMED SEO API] Ошибка JSON article_structures.json: '
-            . json_last_error_msg()
-        );
-
-        temedSeoSendError(
-            'Некорректный JSON конфигурации структур статей',
-            500
-        );
-    }
-
-    if (
-        !array_key_exists('configs', $data)
-        || !is_array($data['configs'])
-    ) {
-        temedSeoSendError(
-            'В конфигурации структур отсутствует массив configs',
-            500
-        );
-    }
-
-    $requiredFields = ['id', 'version', 'intent', 'name'];
-    $seenIds = [];
-
-    foreach ($data['configs'] as $index => $structure) {
-        if (!is_array($structure)) {
-            temedSeoSendError(
-                'Некорректная структура в конфигурации',
-                500,
-                ['config_index' => $index]
-            );
-        }
-
-        foreach ($requiredFields as $field) {
-            if (
-                !array_key_exists($field, $structure)
-                || trim((string)$structure[$field]) === ''
-            ) {
-                temedSeoSendError(
-                    'В структуре отсутствует обязательное поле',
-                    500,
-                    [
-                        'config_index' => $index,
-                        'field' => $field,
-                    ]
-                );
-            }
-        }
-
-        $structureId = trim((string)$structure['id']);
-
-        if (isset($seenIds[$structureId])) {
-            temedSeoSendError(
-                'В конфигурации обнаружен повторяющийся id структуры',
-                500,
-                ['structure_id' => $structureId]
-            );
-        }
-
-        $seenIds[$structureId] = true;
-    }
-
-    $cache = $data;
-
-    return $cache;
-}
-
 function getCapabilities(): array
 {
     return [
@@ -1365,7 +1268,6 @@ function getCapabilities(): array
             'article',
             'article_properties',
             'article_sections',
-            'article_structures',
             'clinics',
             'clinic',
             'prices',
@@ -1388,7 +1290,7 @@ function getCapabilities(): array
             'offset',
         ],
         'methods' => [
-            'GET' => ['ping','capabilities','bootstrap','iblocks','iblock_properties','doctors','doctor','doctor_properties','articles','article','article_properties','article_sections','article_structures','clinics','clinic','prices','price','services','service','dictionaries','system_manifest'],
+            'GET' => ['ping','capabilities','bootstrap','iblocks','iblock_properties','doctors','doctor','doctor_properties','articles','article','article_properties','article_sections','clinics','clinic','prices','price','services','service','dictionaries','system_manifest'],
             'POST' => ['internal_uniqueness', 'cannibalization_check', 'linking_candidates', 'create_or_update_draft'],
         ],
         'write_actions' => [

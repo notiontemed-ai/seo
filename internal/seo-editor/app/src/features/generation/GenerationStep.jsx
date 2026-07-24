@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store/useStore.js';
 import { api } from '../../api/client.js';
-import { Button, Spinner, Field, TextArea, Collapsible, Notice } from '../../components/ui.jsx';
+import { Button, Spinner, Field, TextInput, TextArea, Collapsible, Notice } from '../../components/ui.jsx';
 import { BLOCK_LIBRARY, validateArticleContent } from '../../lib/articleContent.js';
+import { structureBlocks } from '../task/structureMeta.js';
+
+// Список типов блоков структуры-архетипа (для structure_config.recommended_blocks,
+// которого нет в новых конфигах — деривируем из порядка блоков structure).
+function recommendedBlocks(structure) {
+  if (Array.isArray(structure.recommended_blocks) && structure.recommended_blocks.length) {
+    return structure.recommended_blocks;
+  }
+  return [...new Set(structureBlocks(structure).map((b) => b.block))];
+}
 
 function buildBrief(article, structures) {
   const structure = structures.find((s) => s.id === article.structure_id) || null;
@@ -12,11 +22,10 @@ function buildBrief(article, structures) {
     primary_query: article.primary_query,
     secondary_queries: article.secondary_queries,
     search_intent: article.search_intent,
-    article_type: article.article_type,
     region: article.region,
     preview_text: article.preview_text,
     structure_config: structure
-      ? { id: structure.id, name: structure.name, recommended_blocks: structure.recommended_blocks || [], structure: structure.structure || [], forbidden: structure.forbidden || [] }
+      ? { id: structure.id, name: structure.name, recommended_blocks: recommendedBlocks(structure), structure: structure.structure || [], forbidden: structure.forbidden || [] }
       : null,
   };
 }
@@ -43,6 +52,45 @@ export function buildExternalTask(article, structures) {
     },
     brief,
   };
+}
+
+// Счётчик символов с мягким ориентиром: превышение подсвечивается, но не блокирует.
+function CharCount({ value, limit }) {
+  const len = (value || '').length;
+  const over = limit && len > limit;
+  return (
+    <span className={'char-count' + (over ? ' over' : '')}>
+      {len}{limit ? ' / ' + limit : ''}
+    </span>
+  );
+}
+
+// Мета и анонс (ТЗ 5): редактируемая секция на экране результата генерации.
+// Предзаполняется из ответа модели, счётчики с мягкими ориентирами.
+function MetaAndAnnounce({ article, patchArticle }) {
+  return (
+    <div className="meta-announce">
+      <h3>Мета и анонс</h3>
+      <Field label={<span>SEO title <CharCount value={article.seo_title} limit={60} /></span>}>
+        <TextInput
+          className={'input' + ((article.seo_title || '').length > 60 ? ' over' : '')}
+          value={article.seo_title}
+          onChange={(e) => patchArticle({ seo_title: e.target.value })}
+        />
+      </Field>
+      <Field label={<span>Meta description <CharCount value={article.meta_description} limit={160} /></span>}>
+        <TextArea
+          className={'textarea' + ((article.meta_description || '').length > 160 ? ' over' : '')}
+          rows={2}
+          value={article.meta_description}
+          onChange={(e) => patchArticle({ meta_description: e.target.value })}
+        />
+      </Field>
+      <Field label={<span>Анонс (preview_text) <CharCount value={article.preview_text} /></span>}>
+        <TextArea rows={3} value={article.preview_text} onChange={(e) => patchArticle({ preview_text: e.target.value })} />
+      </Field>
+    </div>
+  );
 }
 
 export default function GenerationStep() {
@@ -72,6 +120,8 @@ export default function GenerationStep() {
     if (data.name) patchArticle({ name: data.name });
     if (data.code) patchArticle({ code: data.code });
     if (data.preview_text) patchArticle({ preview_text: data.preview_text });
+    if (data.seo_title) patchArticle({ seo_title: data.seo_title });
+    if (data.meta_description) patchArticle({ meta_description: data.meta_description });
     if (data.short_answer && !article.short_answer) patchArticle({ short_answer: data.short_answer });
     setWarnings([...(data.warnings || []), ...extraWarnings]);
     setMedQuestions(data.medical_review_questions || data.med_questions || []);
@@ -187,6 +237,8 @@ export default function GenerationStep() {
           </ul>
         </Collapsible>
       )}
+
+      {article.blocks.length > 0 && <MetaAndAnnounce article={article} patchArticle={patchArticle} />}
 
       {medQuestions.length > 0 && (
         <div className="med-review">

@@ -1,11 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { translitCode, guessArticleType, topicToArticlePatch, caseStudyBlock } from '../src/lib/caseEntry.js';
-
-const TYPES = [
-  { xml_id: 'informational', value: 'Информационная' },
-  { xml_id: 'diagnostics', value: 'Диагностика' },
-  { xml_id: 'comparison', value: 'Сравнение' },
-];
+import { translitCode, topicToArticlePatch, caseStudyBlock } from '../src/lib/caseEntry.js';
 
 describe('translitCode', () => {
   it('transliterates russian titles to kebab-case', () => {
@@ -22,34 +16,37 @@ describe('translitCode', () => {
   });
 });
 
-describe('guessArticleType', () => {
-  it('detects comparison', () => {
-    expect(guessArticleType('МРТ или КТ: что выбрать', TYPES)).toBe('comparison');
-  });
-  it('detects diagnostics', () => {
-    expect(guessArticleType('Как проходит МРТ позвоночника', TYPES)).toBe('diagnostics');
-  });
-  it('falls back to informational when nothing matches', () => {
-    expect(guessArticleType('Просто текст без маркеров', TYPES)).toBe('informational');
-  });
-  it('never returns xml_id absent from the dictionary', () => {
-    expect(guessArticleType('лечение боли', [{ xml_id: 'informational' }])).toBe('informational');
-    expect(guessArticleType('лечение боли', [])).toBe('');
-  });
-});
-
 describe('topicToArticlePatch', () => {
-  const topic = { title: 'Боль в пояснице', primary_query: 'болит поясница', fit: 'кейс о диагностике' };
+  const topic = {
+    title: 'Боль в пояснице',
+    primary_query: 'болит поясница',
+    secondary_queries: ['боль в спине', ' лечение поясницы ', ''],
+    fit: 'кейс о диагностике',
+  };
   const caseData = { transcript: 'Пациент 45 лет…', summary: 'Кейс о боли' };
 
   it('prefills task fields from topic', () => {
-    const patch = topicToArticlePatch(topic, caseData, TYPES);
+    const patch = topicToArticlePatch(topic, caseData);
     expect(patch.name).toBe('Боль в пояснице');
     expect(patch.primary_query).toBe('болит поясница');
     expect(patch.code).toBe('bol-v-poyasnitse');
-    expect(patch.article_type).toBe('diagnostics');
     expect(patch.case_transcript).toBe('Пациент 45 лет…');
     expect(patch.case_summary).toBe('Кейс о боли');
+  });
+
+  it('carries trimmed non-empty secondary queries (ТЗ 8)', () => {
+    const patch = topicToArticlePatch(topic, caseData);
+    expect(patch.secondary_queries).toEqual(['боль в спине', 'лечение поясницы']);
+  });
+
+  it('does not set article_type (ТЗ 7)', () => {
+    const patch = topicToArticlePatch(topic, caseData);
+    expect(patch).not.toHaveProperty('article_type');
+  });
+
+  it('handles topics without secondary queries', () => {
+    const patch = topicToArticlePatch({ title: 'Тема', primary_query: 'запрос' }, caseData);
+    expect(patch.secondary_queries).toEqual([]);
   });
 });
 

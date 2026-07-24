@@ -8,7 +8,7 @@ const SESSION_KEY = 'temed_seo_assistant_history_v2';
 const HISTORY_LIMIT = 20;
 
 // Поля статьи, которые ассистент может предлагать изменить.
-const ALLOWED_FIELDS = ['name', 'code', 'preview_text', 'primary_query', 'secondary_queries', 'search_intent'];
+const ALLOWED_FIELDS = ['name', 'code', 'preview_text', 'primary_query', 'secondary_queries', 'search_intent', 'seo_title', 'meta_description'];
 
 function loadHistory() {
   try {

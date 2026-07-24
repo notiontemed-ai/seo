@@ -185,6 +185,46 @@ function proxyFetchApiData(string $apiUrl, string $apiToken, string $action)
 }
 
 /**
+ * Прочитать локальный конфиг структур статей (перенесён из публичного API в
+ * редактор, см. ТЗ 4.1). Возвращает данные в прежнем формате поля data
+ * ({shared_ymyl_rules, configs, count}) или null, если файл недоступен/невалиден.
+ *
+ * @return array<string,mixed>|null
+ */
+function proxyLoadLocalStructures(): ?array
+{
+    $filePath = __DIR__ . '/data/article_structures.json';
+
+    if (!is_file($filePath) || !is_readable($filePath)) {
+        return null;
+    }
+
+    $json = file_get_contents($filePath);
+
+    if ($json === false || trim((string)$json) === '') {
+        return null;
+    }
+
+    $data = json_decode((string)$json, true);
+
+    if (
+        json_last_error() !== JSON_ERROR_NONE
+        || !is_array($data)
+        || !isset($data['configs'])
+        || !is_array($data['configs'])
+    ) {
+        return null;
+    }
+
+    // Гарантируем поле count в прежнем формате ответа action=article_structures.
+    if (!array_key_exists('count', $data)) {
+        $data['count'] = count($data['configs']);
+    }
+
+    return $data;
+}
+
+/**
  * Разобрать значение вида "40M" / "8M" / "1G" из php.ini в байты.
  * Пустое значение или "0" трактуется как «без лимита» (0).
  */
@@ -223,7 +263,9 @@ function proxyIniBytes(string $value): int
 function proxyEnrichAssistantPayload(array $payload, string $apiUrl, string $apiToken): array
 {
     $manifest = proxyFetchApiData($apiUrl, $apiToken, 'system_manifest');
-    $structures = proxyFetchApiData($apiUrl, $apiToken, 'article_structures');
+    // Конфиг структур теперь локальный (ТЗ 4.1): читаем из файла редактора,
+    // а не из публичного API.
+    $structures = proxyLoadLocalStructures();
     $dictionaries = proxyFetchApiData($apiUrl, $apiToken, 'dictionaries');
 
     $missing = [];
@@ -321,7 +363,6 @@ $allowedGetActions = [
     'article',
     'article_properties',
     'article_sections',
-    'article_structures',
     'clinics',
     'clinic',
     'prices',
@@ -370,6 +411,32 @@ $n8nActions = [
 ];
 
 if ($method === 'GET') {
+    $action = isset($_GET['action']) && !is_array($_GET['action'])
+        ? trim((string)$_GET['action'])
+        : '';
+
+    // Конфиг структур статей обслуживается локально из data/article_structures.json
+    // (ТЗ 4.1): без обращения к внешнему API. Формат ответа прежний.
+    if ($action === 'article_structures') {
+        $structures = proxyLoadLocalStructures();
+
+        if ($structures === null) {
+            proxySendJson(
+                [
+                    'success' => false,
+                    'error' => 'Не удалось прочитать конфигурацию структур статей '
+                        . '(data/article_structures.json недоступен или невалиден)',
+                ],
+                500
+            );
+        }
+
+        proxySendJson([
+            'success' => true,
+            'data' => $structures,
+        ]);
+    }
+
     if ($apiUrl === '' || $apiToken === '') {
         proxySendJson(
             [
@@ -379,10 +446,6 @@ if ($method === 'GET') {
             500
         );
     }
-
-    $action = isset($_GET['action']) && !is_array($_GET['action'])
-        ? trim((string)$_GET['action'])
-        : '';
 
     if ($action === '' || !in_array($action, $allowedGetActions, true)) {
         proxySendJson(

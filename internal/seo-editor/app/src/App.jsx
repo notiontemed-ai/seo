@@ -11,7 +11,6 @@ import LinkingStep from './features/linking/LinkingStep.jsx';
 import PublishStep from './features/publish/PublishStep.jsx';
 import AssistantPanel from './features/assistant/AssistantPanel.jsx';
 import DraftsPanel from './features/drafts/DraftsPanel.jsx';
-import TranscribePanel from './features/transcribe/TranscribePanel.jsx';
 
 const STEP_COMPONENTS = {
   1: TaskStep,
@@ -22,15 +21,15 @@ const STEP_COMPONENTS = {
   6: PublishStep,
 };
 
-const PANELS = {
-  assistant: AssistantPanel,
-  drafts: DraftsPanel,
-  transcribe: TranscribePanel,
-};
+const SECTIONS = [
+  { key: 'content', label: 'Генерация контента' },
+  { key: 'analytics', label: 'Аналитика' },
+  { key: 'admin', label: 'Администрирование' },
+];
 
 export default function App() {
   const store = useStore();
-  const { ready, bootError, step, panel, debug, notice, dirty } = store;
+  const { ready, bootError, step, section, contentView, panel, debug, notice, dirty } = store;
 
   useEffect(() => {
     let cancelled = false;
@@ -54,7 +53,7 @@ export default function App() {
   useEffect(() => {
     store.persist();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.article, step]);
+  }, [store.article, step, section]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -85,23 +84,43 @@ export default function App() {
   }
 
   const StepComponent = STEP_COMPONENTS[step];
-  const PanelComponent = panel ? PANELS[panel] : null;
+  const isContent = section === 'content';
+  const isWizard = isContent && contentView === 'wizard';
 
   return (
     <div className={'app-shell' + (panel ? ' with-panel' : '')}>
       <header className="app-header">
         <div className="app-brand">TEMED SEO Editor</div>
+        <nav className="app-nav" aria-label="Разделы">
+          {SECTIONS.map((sc) => (
+            <button
+              key={sc.key}
+              className={'nav-tab' + (section === sc.key ? ' on' : '')}
+              onClick={() => store.setSection(sc.key)}
+            >
+              {sc.label}
+            </button>
+          ))}
+        </nav>
         <div className="app-tools">
           <Button variant={panel === 'assistant' ? 'primary' : 'ghost'} onClick={() => store.setPanel('assistant')}>Ассистент</Button>
-          <Button variant={panel === 'drafts' ? 'primary' : 'ghost'} onClick={() => store.setPanel('drafts')}>Черновики</Button>
-          <Button variant={panel === 'transcribe' ? 'primary' : 'ghost'} onClick={() => store.setPanel('transcribe')}>Транскрибация</Button>
           <label className="debug-toggle">
             <input type="checkbox" checked={debug} onChange={(e) => store.setDebug(e.target.checked)} /> Отладка
           </label>
         </div>
       </header>
 
-      <Wizard />
+      {isContent && (
+        <div className="section-bar">
+          <div className="section-tabs">
+            <button className={'section-tab' + (contentView === 'wizard' ? ' on' : '')} onClick={() => store.setContentView('wizard')}>Мастер</button>
+            <button className={'section-tab' + (contentView === 'drafts' ? ' on' : '')} onClick={() => store.setContentView('drafts')}>Черновики</button>
+          </div>
+          <SaveIndicator />
+        </div>
+      )}
+
+      {isWizard && <Wizard />}
 
       {notice && (
         <div className="notice-bar">
@@ -111,15 +130,40 @@ export default function App() {
 
       <div className="app-main">
         <main className="content-col">
-          <StepComponent />
-          <StepNav />
+          {isWizard && (
+            <>
+              <StepComponent />
+              <StepNav />
+            </>
+          )}
+          {isContent && contentView === 'drafts' && <DraftsPanel />}
+          {section === 'analytics' && <EmptySection title="Аналитика" />}
+          {section === 'admin' && <EmptySection title="Администрирование" />}
         </main>
-        {PanelComponent && (
+        {panel === 'assistant' && (
           <aside className="side-panel">
-            <PanelComponent />
+            <AssistantPanel />
           </aside>
         )}
       </div>
+    </div>
+  );
+}
+
+function SaveIndicator() {
+  const { localSavedAt } = useStore();
+  if (!localSavedAt) return <span className="save-indicator muted">черновик не сохранён</span>;
+  const t = new Date(localSavedAt);
+  const hh = String(t.getHours()).padStart(2, '0');
+  const mm = String(t.getMinutes()).padStart(2, '0');
+  return <span className="save-indicator muted">сохранено локально · {hh}:{mm}</span>;
+}
+
+function EmptySection({ title }) {
+  return (
+    <div className="empty-section step-body">
+      <h2 className="step-title">{title}</h2>
+      <p className="muted">Раздел появится позже. Сейчас доступна «Генерация контента».</p>
     </div>
   );
 }

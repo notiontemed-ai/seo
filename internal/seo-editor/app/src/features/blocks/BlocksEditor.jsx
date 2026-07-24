@@ -1,14 +1,38 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../../store/useStore.js';
-import { BLOCK_LIBRARY, CATEGORIES, blockMeta } from '../../lib/articleContent.js';
+import { BLOCK_LIBRARY, CATEGORIES, blockMeta, defaultBlock } from '../../lib/articleContent.js';
+import { structureBlocks, formatRepeat } from '../task/structureMeta.js';
 import { renderArticle } from '../../lib/htmlRenderer.js';
 import { BlockField } from '../../components/fields.jsx';
 import { Button, Tag, Select, Modal, Collapsible } from '../../components/ui.jsx';
 
 export default function BlocksEditor() {
-  const { article, addBlock, debug } = useStore();
+  const { article, addBlock, setBlocks, structures, debug } = useStore();
   const [showAdd, setShowAdd] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+
+  const structure = structures.find((s) => s.id === article.structure_id) || null;
+  const skeleton = structure ? structureBlocks(structure) : [];
+  const prefilled = useRef(false);
+
+  // Скелет из структуры (ТЗ 4.3): обязательные блоки добавляются только в пустую
+  // статью, уже существующий контент не перетирается.
+  useEffect(() => {
+    if (!structure) return;
+    if (article.blocks.length > 0) {
+      prefilled.current = true;
+      return;
+    }
+    if (prefilled.current) return;
+    prefilled.current = true;
+    const required = skeleton.filter((b) => b.required).map((b) => defaultBlock(b.block));
+    if (required.length) setBlocks(required);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [structure?.id]);
+
+  const present = new Set(article.blocks.map((b) => b.type));
+  const requiredBlocks = skeleton.filter((b) => b.required);
+  const optionalBlocks = skeleton.filter((b) => !b.required);
 
   return (
     <div className="step-body">
@@ -23,6 +47,34 @@ export default function BlocksEditor() {
           </Button>
         </div>
       </div>
+
+      {structure && (
+        <div className="skeleton-panel">
+          <div className="skeleton-title">
+            Структура: <strong>{structure.name}</strong> <span className="muted">({requiredBlocks.filter((b) => present.has(b.block)).length}/{requiredBlocks.length} обязательных)</span>
+          </div>
+          <ul className="skeleton-checklist">
+            {requiredBlocks.map((b, i) => {
+              const rep = formatRepeat(b.repeat);
+              const ok = present.has(b.block);
+              return (
+                <li key={i} className={ok ? 'ok' : 'todo'}>
+                  <span className="brief-mark">{ok ? '✓' : '○'}</span> {blockMeta(b.block).label}{rep && <span className="muted"> {rep}</span>}
+                </li>
+              );
+            })}
+          </ul>
+          {optionalBlocks.length > 0 && (
+            <div className="skeleton-optional muted">
+              Опционально: {optionalBlocks.map((b, i) => (
+                <button key={i} type="button" className="skeleton-add" onClick={() => addBlock(b.block)}>
+                  + {blockMeta(b.block).label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {!article.blocks.length && <p className="muted">Блоков пока нет. Сгенерируйте черновик на шаге 2 или добавьте блоки вручную.</p>}
 

@@ -61,6 +61,10 @@ describe('buildProperties (этап 8.1)', () => {
     expect(props).not.toHaveProperty('REGION');
     expect(props).not.toHaveProperty('MEDICAL_REVIEWER');
   });
+
+  it('never sets ARTICLE_TYPE (ТЗ 7)', () => {
+    expect(props).not.toHaveProperty('ARTICLE_TYPE');
+  });
 });
 
 describe('buildDraftPayload', () => {

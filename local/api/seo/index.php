@@ -194,14 +194,6 @@ switch ($action) {
         sendSuccess($items, ['count' => count($items), 'source' => $source]);
         break;
 
-    case 'article_structures':
-        $structures = temedSeoLoadArticleStructures();
-        sendSuccess(
-            $structures,
-            ['count' => count($structures['configs'])]
-        );
-        break;
-
     case 'article_sections':
         $source = getStringParam('source', 'new');
 
