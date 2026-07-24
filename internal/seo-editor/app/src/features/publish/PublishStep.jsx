@@ -4,15 +4,34 @@ import { api } from '../../api/client.js';
 import { Button, Spinner, Modal, Notice, Tag } from '../../components/ui.jsx';
 
 import { buildDraftPayload } from '../../lib/publishPayload.js';
+import { checkState } from '../../lib/checkFreshness.js';
+
+const CHECK_LABELS = {
+  cannibalization: 'Каннибализация',
+  textru: 'TEXT.RU',
+  linking: 'Перелинковка',
+};
+
+// Предупреждения о проверках, которые устарели или не запускались (этап 8.4).
+function checkWarnings(checkHashes, article) {
+  const warnings = [];
+  for (const [kind, label] of Object.entries(CHECK_LABELS)) {
+    const state = checkState(checkHashes[kind], article);
+    if (state === 'missing') warnings.push(label + ': проверка не запускалась');
+    if (state === 'stale') warnings.push(label + ': результат устарел, текст изменился');
+  }
+  return warnings;
+}
 
 export default function PublishStep() {
-  const { article, structures } = useStore();
+  const { article, structures, checkHashes } = useStore();
   const [confirm, setConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
 
   const canPublish = article.name && article.code && article.section_id && article.blocks.length;
+  const staleWarnings = checkWarnings(checkHashes, article);
 
   const publish = async () => {
     setLoading(true);
@@ -35,6 +54,9 @@ export default function PublishStep() {
       <p className="muted">Запись создаёт/обновляет НЕАКТИВНЫЙ элемент в инфоблоке 81. Активные элементы не изменяются.</p>
 
       {!canPublish && <Notice notice={{ type: 'warn', text: 'Заполните название, код, раздел и добавьте хотя бы один блок.' }} />}
+      {staleWarnings.length > 0 && (
+        <Notice notice={{ type: 'warn', text: 'Проверки: ' + staleWarnings.join('; ') + '.' }} />
+      )}
       {error && <Notice notice={{ type: 'error', text: error }} />}
 
       <Button variant="primary" onClick={() => setConfirm(true)} disabled={!canPublish || loading}>
@@ -85,6 +107,13 @@ export default function PublishStep() {
           <dt>ACTIVE</dt>
           <dd>N (всегда)</dd>
         </dl>
+        {staleWarnings.length > 0 && (
+          <ul className="warn-list">
+            {staleWarnings.map((w, i) => (
+              <li key={i}>{w}</li>
+            ))}
+          </ul>
+        )}
       </Modal>
     </div>
   );

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { defaultBlock } from '../lib/articleContent.js';
+import { loadTextruSession } from '../lib/checkFreshness.js';
 
 const STORAGE_KEY = 'temed_seo_editor_state_v2';
 
@@ -73,6 +74,11 @@ export const useStore = create((set, get) => ({
   textru: null,
   linking: null,
   linkingSelected: [],
+  // Хеш контента в момент запуска каждой проверки (этап 8.4): расхождение с
+  // текущим contentHash(article) означает «результат устарел».
+  checkHashes: { cannibalization: '', textru: '', linking: '' },
+  setCheckHash: (kind, hash) =>
+    set((s) => ({ checkHashes: { ...s.checkHashes, [kind]: hash } })),
 
   setStep: (step) => set({ step }),
   setDebug: (debug) => set({ debug }),
@@ -234,5 +240,13 @@ export const useStore = create((set, get) => ({
       const data = JSON.parse(raw);
       if (data && data.article) set({ article: { ...emptyArticle(), ...data.article }, step: data.step || 1 });
     } catch (_) {}
+    // Активная проверка TEXT.RU переживает перезагрузку страницы.
+    const textruSession = loadTextruSession();
+    if (textruSession) {
+      set((s) => ({
+        textru: s.textru || { uid: textruSession.text_uid, status: 'restored', attempt: textruSession.attempt || 0 },
+        checkHashes: { ...s.checkHashes, textru: textruSession.content_hash || '' },
+      }));
+    }
   },
 }));
