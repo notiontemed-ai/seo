@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../../store/useStore.js';
 import { api } from '../../api/client.js';
 import { Button, Spinner, TextArea, Notice } from '../../components/ui.jsx';
+import { filterSuggestions } from '../../lib/suggestions.js';
 
 const SESSION_KEY = 'temed_seo_assistant_history_v2';
 const HISTORY_LIMIT = 20;
@@ -48,11 +49,8 @@ export default function AssistantPanel() {
       });
       const data = res.data || res;
       // Рендерим только валидные suggestions: обязательны field_id и value.
-      const suggestions = (data.suggestions || []).filter(
-        (s) => s && s.field_id && ALLOWED_FIELDS.includes(s.field_id) && s.value != null && s.value !== ''
-      );
-      const dropped = (data.suggestions || []).length - suggestions.length;
-      if (dropped > 0 && debug) console.warn('Отброшено невалидных suggestions:', dropped);
+      const { kept: suggestions, dropped } = filterSuggestions(data.suggestions, ALLOWED_FIELDS);
+      if (dropped.length > 0 && debug) console.warn('Отброшено невалидных suggestions:', dropped.length);
       setMessages((m) => [...m, { role: 'assistant', text: data.answer || '', suggestions, warnings: data.warnings || [] }].slice(-HISTORY_LIMIT));
     } catch (e) {
       setError(e.message);
