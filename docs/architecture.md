@@ -1,35 +1,57 @@
-# TEMED SEO Editor
+# Архитектура TEMED SEO Editor
 
-Документ обновлён под API 1.2.0. Production baseline хранится в `references/local-api-seo-index.php` и не разворачивается как endpoint. Рабочий read-only endpoint — `local/api/seo/index.php`, построенный поверх baseline и расширенный actions `system_manifest` и `internal_uniqueness`.
+Актуально для API 1.8.0.
 
-## Архитектура и границы
+## Стек и границы
 
-Browser editor обращается к `internal/seo-editor/proxy.php`. Proxy передаёт GET read-only actions в TEMED SEO API, отправляет `check_internal_uniqueness` напрямую в API POST `internal_uniqueness`, а AI/TEXT.RU actions — в n8n. XML экспорт остаётся в PHP (`internal/seo-editor/export.php`) и не создаёт элемент в Bitrix напрямую.
+- **PHP API** — `local/api/seo/index.php` + `lib/*`. Read-действия (справочники
+  Bitrix) и POST-действия: проверки (`cannibalization_check`), перелинковка
+  (`linking_candidates`) и запись черновика (`create_or_update_draft`).
+- **Редактор** — React + Vite. Исходники `internal/seo-editor/app/`, сборка
+  `internal/seo-editor/dist/`. `index.php` редактора отдаёт `dist/index.html`
+  после авторизации по паролю (сессия).
+- **proxy** — `internal/seo-editor/proxy.php`. Браузер ходит только в proxy
+  (same-origin). Proxy маршрутизирует: GET read-действия и POST-проверки/запись
+  → PHP API (read/write-токены на сервере); AI/TEXT.RU/черновики/транскрибация →
+  n8n. Токены и секреты в браузер не попадают.
+- **n8n** — `n8n/TEMED SEO Editor.json`. ИИ-генерация (`article_content` v2),
+  TEXT.RU, ассистент, `suggest_anchor`, черновики (Google Sheets), транскрибация.
 
-## Bitrix schema
+## Контент
 
-Используются инфоблоки из `config.php`: articles 81, legacy_articles 68, doctors 65, prices 70, clinics 10. Статьи читаются из 81 и 68; для 81 дополнительно учитывается свойство `SHORT_ANSWER`. Свойства врачей фильтруются allowlist baseline, чувствительные свойства исключаются.
+Статья — структурированные блоки `article_content` v2 (не HTML), см.
+`article-content.md`. HTML собирается детерминированно `HtmlRenderer` (PHP при
+записи в Bitrix, JS при предпросмотре в редакторе).
 
-## Security
+## Публикация
 
-API требует `Authorization: Bearer <read_token>`. Отсутствующий, пустой или `CHANGE_ME` token переводит API в fail-closed `API_NOT_CONFIGURED` 503. Секреты, `config.php`, webhook URL, credential IDs и пути сервера не раскрываются в manifest. `bearer_token` поддержан временно с server-side warning и deprecated.
+Основной путь — write-API `create_or_update_draft` (см. `write-api.md`): прямая
+запись **неактивного** элемента в инфоблок 81. Активные элементы не изменяются.
+XML-экспорт (`internal/seo-editor/export.php`) — запасной механизм.
 
-## Internal uniqueness
+## Модули PHP API (после разнесения, этап 6)
 
-Алгоритм `internal-shingles-v1`: общая HTML/text нормализация, shingle coverage по последовательностям слов, сравнение с corpus инфоблоков 81 и 68, исключение только по паре `source + element_id`. Результат не меняет медицинский текст и помечает совпавшие фрагменты как требующие ручной проверки.
+- `lib/ApiResponse.php` — JSON-ответы (success/error).
+- `lib/ApiAuth.php` — авторизация (read/write-токены), разрешение инфоблоков.
+- `lib/ApiSupport.php` — helpers: URL, параметры запроса, текст, свойства.
+- `lib/ReadActions.php` — обработчики read-действий (Bitrix) + capabilities.
+- `lib/ArticleContent.php`, `HtmlRenderer.php`, `HtmlToBlocksParser.php` —
+  контент v2 и рендер.
+- `lib/CannibalizationService.php`, `CorpusCache.php`, `DonorLinkParser.php`,
+  `LinkingService.php`, `TextSignals.php` — проверки и перелинковка.
+- `lib/ArticleDraftWriter.php`, `ContentReferenceResolver.php` — запись.
+- `index.php` — bootstrap: конфиг, авторизация, диспетчеризация действий.
 
-## Assistant
+Helpers и read-обработчики оставлены глобальными функциями в модулях (не
+переведены в классы), чтобы не менять ~80 мест вызова и гарантировать
+неизменность поведения read-действий (совместимость с n8n и внешними
+потребителями).
 
-`assistant_chat` идёт через proxy в n8n model branch. Proxy добавляет live `system_manifest`, `article_structures` и безопасный summary dictionaries. Suggestions требуют подтверждения пользователя и запрещены для секретов, endpoint, credential, config и hidden security fields.
+## Безопасность
 
-## Deployment
-
-Выкладка только вручную после backup production файлов и smoke tests. Не копировать `references/**`, docs, tests и `config.php.example` поверх production `config.php`. Rollback: вернуть backup API/proxy/assets, не менять config, сбросить opcode cache и проверить bootstrap.
-
-## Draft storage architecture
-
-Draft versioning uses the existing browser → `/internal/seo-editor/proxy.php` → `/temed-seo-editor-v1` n8n webhook path. There is no `drafts.php`, separate webhook, Apps Script, Google Drive storage, second header secret, or second Google credential.
-
-Spreadsheet `1DEpgU7rR7IsY0jF-Aarm25sFF4RkqPeEn2jm76DaBto` contains sheets `Черновики`, `Версии`, `Снимки`, `Журнал`, and `Справочники`. The `Снимки` sheet stores Base64 snapshot chunks up to 40,000 characters. Readers sort chunks by `CHUNK_INDEX`, verify count, UTF-8 size, SHA-256 hash, JSON validity, and `schema_version` before returning a snapshot.
-
-Google Sheets writes use `valueInputOption=RAW`; full snapshots and HTML are not written to `Журнал`.
+- Read-действия — `Authorization: Bearer <read_token>`; write-действия —
+  отдельный `<write_token>`. Отсутствие/пусто/`CHANGE_ME` → 503
+  `API_NOT_CONFIGURED` (fail-closed).
+- Чувствительные свойства (токены, пароли) исключаются из выдачи; свойства
+  врачей — по allowlist.
+- Медицинский текст не переписывается автоматически ни одной проверкой.

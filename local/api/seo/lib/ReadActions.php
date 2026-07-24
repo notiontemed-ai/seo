@@ -2,355 +2,7 @@
 
 declare(strict_types=1);
 
-require $_SERVER['DOCUMENT_ROOT'] . '/bitrix/modules/main/include/prolog_before.php';
-
-use Bitrix\Main\Loader;
-
-const API_VERSION = '1.1.0';
-const DEFAULT_BASE_URL = 'https://temed.ru';
-const DEFAULT_LIST_LIMIT = 500;
-const MAX_LIST_LIMIT = 1000;
-
-ini_set('display_errors', '0');
-header('Content-Type: application/json; charset=utf-8');
-header('X-Content-Type-Options: nosniff');
-header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
-header('Pragma: no-cache');
-
-function sendJson(array $payload, int $statusCode = 200): void
-{
-    http_response_code($statusCode);
-
-    echo json_encode(
-        $payload,
-        JSON_UNESCAPED_UNICODE
-        | JSON_UNESCAPED_SLASHES
-        | JSON_PRETTY_PRINT
-       
-    );
-
-    exit;
-}
-
-function sendSuccess($data, array $meta = [], int $statusCode = 200): void
-{
-    $payload = [
-        'success' => true,
-        'api_version' => API_VERSION,
-        'data' => $data,
-    ];
-
-    if ($meta !== []) {
-        $payload['meta'] = $meta;
-    }
-
-    sendJson($payload, $statusCode);
-}
-
-function temedSeoSendError(string $message, int $statusCode, array $details = []): void
-{
-    $payload = [
-        'success' => false,
-        'api_version' => API_VERSION,
-        'error' => $message,
-    ];
-
-    if ($details !== []) {
-        $payload['details'] = $details;
-    }
-
-    sendJson($payload, $statusCode);
-}
-
-set_exception_handler(
-    static function (Throwable $exception): void {
-        error_log(
-            sprintf(
-                '[TEMED SEO API] %s in %s:%d',
-                $exception->getMessage(),
-                $exception->getFile(),
-                $exception->getLine()
-            )
-        );
-
-        temedSeoSendError('Внутренняя ошибка API', 500);
-    }
-);
-
-function getAuthorizationHeader(): string
-{
-    $candidates = [
-        $_SERVER['HTTP_AUTHORIZATION'] ?? '',
-        $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? '',
-    ];
-
-    foreach ($candidates as $candidate) {
-        if (is_string($candidate) && trim($candidate) !== '') {
-            return trim($candidate);
-        }
-    }
-
-    if (function_exists('getallheaders')) {
-        $headers = getallheaders();
-
-        if (is_array($headers)) {
-            foreach ($headers as $name => $value) {
-                if (strcasecmp((string)$name, 'Authorization') === 0) {
-                    return trim((string)$value);
-                }
-            }
-        }
-    }
-
-    return '';
-}
-
-function requireGetMethod(): void
-{
-    $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
-
-    if ($method !== 'GET') {
-        header('Allow: GET');
-        temedSeoSendError('Метод не поддерживается', 405, ['allowed_methods' => ['GET']]);
-    }
-}
-
-function authenticate(array $config): void
-{
-    $expectedToken = trim((string)($config['read_token'] ?? ''));
-    $authorization = getAuthorizationHeader();
-
-    if (
-        $expectedToken === ''
-        || !hash_equals('Bearer ' . $expectedToken, $authorization)
-    ) {
-        temedSeoSendError('Unauthorized', 401);
-    }
-}
-
-function getConfiguredIblockId(array $config, string $key): int
-{
-    $iblockId = (int)($config['iblocks'][$key] ?? 0);
-
-    if ($iblockId <= 0) {
-        temedSeoSendError(
-            'В config.php не указан инфоблок',
-            500,
-            ['config_key' => $key]
-        );
-    }
-
-    return $iblockId;
-}
-
-function getBaseUrl(array $config): string
-{
-    $baseUrl = trim((string)($config['base_url'] ?? DEFAULT_BASE_URL));
-
-    return rtrim($baseUrl !== '' ? $baseUrl : DEFAULT_BASE_URL, '/');
-}
-
-function buildAbsoluteUrl(?string $url, array $config): string
-{
-    $url = trim((string)$url);
-
-    if ($url === '') {
-        return '';
-    }
-
-    if (preg_match('~^https?://~i', $url)) {
-        return $url;
-    }
-
-    return getBaseUrl($config) . '/' . ltrim($url, '/');
-}
-
-function getStringParam(string $name, string $default = ''): string
-{
-    $value = $_GET[$name] ?? $default;
-
-    if (is_array($value)) {
-        return $default;
-    }
-
-    return trim((string)$value);
-}
-
-function getIntParam(string $name, int $default = 0): int
-{
-    $value = $_GET[$name] ?? $default;
-
-    if (is_array($value)) {
-        return $default;
-    }
-
-    return (int)$value;
-}
-
-function getBoolParam(string $name, bool $default = false): bool
-{
-    if (!array_key_exists($name, $_GET)) {
-        return $default;
-    }
-
-    $value = strtolower(getStringParam($name));
-
-    return in_array($value, ['1', 'true', 'yes', 'y', 'on'], true);
-}
-
-function getLimit(): int
-{
-    $limit = getIntParam('limit', DEFAULT_LIST_LIMIT);
-
-    if ($limit <= 0) {
-        $limit = DEFAULT_LIST_LIMIT;
-    }
-
-    return min($limit, MAX_LIST_LIMIT);
-}
-
-function getOffset(): int
-{
-    return max(0, getIntParam('offset', 0));
-}
-
-function normalizeActiveFilter(string $value): ?string
-{
-    $value = strtoupper(trim($value));
-
-    if ($value === 'Y' || $value === 'N') {
-        return $value;
-    }
-
-    return null;
-}
-
-function cleanPlainText(string $text): string
-{
-    $text = html_entity_decode($text, ENT_QUOTES | ENT_HTML5, 'UTF-8');
-    $text = preg_replace('~<br\s*/?>~iu', "\n", $text) ?? $text;
-    $text = strip_tags($text);
-    $text = preg_replace('~[\x{00A0}\s]+~u', ' ', $text) ?? $text;
-
-    return trim($text);
-}
-
-function makeSummary(string $previewText, string $detailText, int $length = 500): string
-{
-    $source = cleanPlainText($previewText);
-
-    if ($source === '') {
-        $source = cleanPlainText($detailText);
-    }
-
-    if ($source === '') {
-        return '';
-    }
-
-    if (mb_strlen($source, 'UTF-8') <= $length) {
-        return $source;
-    }
-
-    $summary = mb_substr($source, 0, $length, 'UTF-8');
-    $lastSpace = mb_strrpos($summary, ' ', 0, 'UTF-8');
-
-    if ($lastSpace !== false && $lastSpace > (int)($length * 0.7)) {
-        $summary = mb_substr($summary, 0, $lastSpace, 'UTF-8');
-    }
-
-    return rtrim($summary, " \t\n\r\0\x0B,.;:-") . '…';
-}
-
-function isEmptyPropertyValue($value): bool
-{
-    return $value === null || $value === '' || $value === false || $value === [];
-}
-
-function arrayValueAt($value, int $index)
-{
-    if (!is_array($value)) {
-        return $index === 0 ? $value : null;
-    }
-
-    $values = array_values($value);
-
-    return $values[$index] ?? null;
-}
-
-function getSensitivePatterns(): array
-{
-    return [
-        'SECRET',
-        'TOKEN',
-        'PASSWORD',
-        'PASSWD',
-        'PRIVATE_KEY',
-        'PUBLIC_KEY',
-        'API_KEY',
-        'WEBHOOK',
-        'AUTH',
-        'LOGIN',
-        'TILDA_SECRET',
-    ];
-}
-
-function isSensitiveProperty(
-    string $code,
-    string $name
-): bool {
-    $haystack = mb_strtoupper(
-        $code . ' ' . $name,
-        'UTF-8'
-    );
-
-    foreach (getSensitivePatterns() as $pattern) {
-        $pattern = mb_strtoupper(
-            $pattern,
-            'UTF-8'
-        );
-
-        $regexp =
-            '~(^|[^A-Z0-9])'
-            . preg_quote($pattern, '~')
-            . '([^A-Z0-9]|$)~u';
-
-        if (preg_match($regexp, $haystack)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-
-function getAllowedDoctorPropertyCodes(): array
-{
-    return [
-        'SHORT_NAME',
-        'POSITION',
-        'CLINIC',
-        'PHOTO',
-        'GENDER',
-        'EDUCATION',
-        'EXPERIENCE',
-        'DIAG',
-        'METODS',
-        'METODS_NEW',
-        'TREATS_NEW',
-        'PRICE',
-        'CONSULT_ONLINE',
-        'ONLINE_LINK',
-        'DOCTOR_GENITIVE_NAME',
-        'SPECIAL1_LP',
-        'SPECIAL2_LP',
-        'SPECIAL3_LP',
-        'CITY_LP',
-        'EXPERIENCE_LP',
-        'PHOTO_LP',
-        'PHOTO2_LP',
-    ];
-}
-
-
+// Обработчики read-действий (Bitrix) + capabilities/bootstrap. Вынесено (этап 6).
 function getLinkedElement(int $elementId, array $config): array
 {
     static $cache = [];
@@ -679,6 +331,192 @@ function getPropertyEnumValues(int $iblockId, string $propertyCode): array
     }
 
     return $items;
+}
+
+
+function temedSeoGetIblockSites(int $iblockId): array
+{
+    $sites = [];
+    $result = CIBlock::GetSite($iblockId);
+
+    while ($site = $result->Fetch()) {
+        $siteId = trim((string)($site['LID'] ?? ''));
+
+        if ($siteId !== '') {
+            $sites[] = $siteId;
+        }
+    }
+
+    return $sites;
+}
+
+function temedSeoGetIblockTypeName(string $typeId): string
+{
+    static $cache = [];
+
+    if ($typeId === '') {
+        return '';
+    }
+
+    if (array_key_exists($typeId, $cache)) {
+        return $cache[$typeId];
+    }
+
+    $languageId = defined('LANGUAGE_ID') ? (string)LANGUAGE_ID : 'ru';
+    $type = CIBlockType::GetByIDLang($typeId, $languageId);
+
+    $cache[$typeId] = is_array($type) ? (string)($type['NAME'] ?? '') : '';
+
+    return $cache[$typeId];
+}
+
+function temedSeoGetAllIblocks(array $config): array
+{
+    $items = [];
+    $result = CIBlock::GetList(
+        ['IBLOCK_TYPE_ID' => 'ASC', 'NAME' => 'ASC', 'ID' => 'ASC'],
+        []
+    );
+
+    while ($iblock = $result->GetNext()) {
+        $iblockId = (int)($iblock['ID'] ?? 0);
+        $typeId = (string)($iblock['IBLOCK_TYPE_ID'] ?? '');
+
+        $items[] = [
+            'id' => $iblockId,
+            'name' => (string)($iblock['NAME'] ?? ''),
+            'code' => (string)($iblock['CODE'] ?? ''),
+            'type_id' => $typeId,
+            'type_name' => temedSeoGetIblockTypeName($typeId),
+            'active' => (string)($iblock['ACTIVE'] ?? ''),
+            'sort' => (int)($iblock['SORT'] ?? 0),
+            'sites' => $iblockId > 0 ? temedSeoGetIblockSites($iblockId) : [],
+            'list_page_url' => (string)($iblock['LIST_PAGE_URL'] ?? ''),
+            'section_page_url' => (string)($iblock['SECTION_PAGE_URL'] ?? ''),
+            'detail_page_url' => (string)($iblock['DETAIL_PAGE_URL'] ?? ''),
+            'created_at' => (string)($iblock['DATE_CREATE'] ?? ''),
+            'updated_at' => (string)($iblock['TIMESTAMP_X'] ?? ''),
+        ];
+    }
+
+    return $items;
+}
+
+function temedSeoStringifyPropertyDefaultValue($value): string
+{
+    if ($value === null || is_array($value) || is_object($value)) {
+        return '';
+    }
+
+    return (string)$value;
+}
+
+function temedSeoNormalizePropertySettings($settings)
+{
+    if (is_array($settings) || is_object($settings)) {
+        return $settings;
+    }
+
+    if (!is_string($settings) || trim($settings) === '') {
+        return [];
+    }
+
+    $serialized = trim($settings);
+    $unserialized = @unserialize($serialized, ['allowed_classes' => false]);
+
+    if ($unserialized !== false || $serialized === 'b:0;') {
+        return is_array($unserialized) || is_object($unserialized)
+            ? $unserialized
+            : $serialized;
+    }
+
+    return $serialized;
+}
+
+function temedSeoGetPropertyEnumDefinitions(int $propertyId): array
+{
+    $items = [];
+    $result = CIBlockPropertyEnum::GetList(
+        ['SORT' => 'ASC', 'VALUE' => 'ASC', 'ID' => 'ASC'],
+        ['PROPERTY_ID' => $propertyId]
+    );
+
+    while ($enum = $result->Fetch()) {
+        $items[] = [
+            'id' => (int)($enum['ID'] ?? 0),
+            'property_id' => (int)($enum['PROPERTY_ID'] ?? $propertyId),
+            'value' => (string)($enum['VALUE'] ?? ''),
+            'xml_id' => (string)($enum['XML_ID'] ?? ''),
+            'sort' => (int)($enum['SORT'] ?? 0),
+            'default' => (string)($enum['DEF'] ?? 'N'),
+        ];
+    }
+
+    return $items;
+}
+
+function temedSeoGetIblockPropertyDefinitions(int $iblockId): array
+{
+    $items = [];
+    $result = CIBlockProperty::GetList(
+        ['SORT' => 'ASC', 'NAME' => 'ASC', 'ID' => 'ASC'],
+        ['IBLOCK_ID' => $iblockId]
+    );
+
+    while ($property = $result->Fetch()) {
+        $code = trim((string)($property['CODE'] ?? ''));
+        $name = trim((string)($property['NAME'] ?? ''));
+
+        if (isSensitiveProperty($code, $name)) {
+            continue;
+        }
+
+        $propertyId = (int)($property['ID'] ?? 0);
+        $type = (string)($property['PROPERTY_TYPE'] ?? '');
+
+        $items[] = [
+            'id' => $propertyId,
+            'iblock_id' => (int)($property['IBLOCK_ID'] ?? $iblockId),
+            'name' => $name,
+            'code' => $code,
+            'type' => $type,
+            'user_type' => (string)($property['USER_TYPE'] ?? ''),
+            'multiple' => (string)($property['MULTIPLE'] ?? 'N'),
+            'required' => (string)($property['IS_REQUIRED'] ?? 'N'),
+            'active' => (string)($property['ACTIVE'] ?? 'Y'),
+            'sort' => (int)($property['SORT'] ?? 0),
+            'linked_iblock_id' => !empty($property['LINK_IBLOCK_ID'])
+                ? (int)$property['LINK_IBLOCK_ID']
+                : null,
+            'default_value' => temedSeoStringifyPropertyDefaultValue($property['DEFAULT_VALUE'] ?? ''),
+            'with_description' => (string)($property['WITH_DESCRIPTION'] ?? 'N'),
+            'searchable' => (string)($property['SEARCHABLE'] ?? 'N'),
+            'filtrable' => (string)($property['FILTRABLE'] ?? 'N'),
+            'xml_id' => (string)($property['XML_ID'] ?? ''),
+            'list_type' => (string)($property['LIST_TYPE'] ?? ''),
+            'row_count' => (int)($property['ROW_COUNT'] ?? 0),
+            'col_count' => (int)($property['COL_COUNT'] ?? 0),
+            'settings' => temedSeoNormalizePropertySettings($property['USER_TYPE_SETTINGS'] ?? []),
+            'enum_values' => $type === 'L' && $propertyId > 0
+                ? temedSeoGetPropertyEnumDefinitions($propertyId)
+                : [],
+        ];
+    }
+
+    return $items;
+}
+
+function temedSeoRequireExistingIblock(int $iblockId): void
+{
+    $result = CIBlock::GetByID($iblockId);
+
+    if (!$result->Fetch()) {
+        temedSeoSendError(
+            'Инфоблок не найден',
+            404,
+            ['iblock_id' => $iblockId]
+        );
+    }
 }
 
 function getDoctorList(array $config): array
@@ -1134,6 +972,8 @@ function getArticleDetail(array $config, int $articleId, string $source): array
         'preview_text_type' => (string)($fields['PREVIEW_TEXT_TYPE'] ?? ''),
         'detail_text' => $detailText,
         'detail_text_type' => (string)($fields['DETAIL_TEXT_TYPE'] ?? ''),
+        // Обратная совместимость: HTML → блоки article_content v2 для редактора.
+        'article_content' => (new HtmlToBlocksParser())->parse($detailText),
         'summary' => makeSummary($previewText, $detailText, 500),
         'preview_picture' => $previewPicture,
         'detail_picture' => $detailPicture,
@@ -1405,6 +1245,9 @@ function getDictionaries(array $config): array
         'forms' => is_array($config['forms'] ?? null)
             ? $config['forms']
             : [],
+        // Библиотека смысловых блоков article_content v2 для карточек
+        // «Добавить блок» в редакторе.
+        'content_blocks' => ArticleContent::catalog(),
     ];
 }
 
@@ -1508,11 +1351,13 @@ function temedSeoLoadArticleStructures(): array
 function getCapabilities(): array
 {
     return [
-        'read_only' => true,
+        'read_only' => false,
         'actions' => [
             'ping',
             'capabilities',
             'bootstrap',
+            'iblocks',
+            'iblock_properties',
             'doctors',
             'doctor',
             'doctor_properties',
@@ -1528,6 +1373,11 @@ function getCapabilities(): array
             'services',
             'service',
             'dictionaries',
+            'system_manifest',
+            'internal_uniqueness',
+            'cannibalization_check',
+            'linking_candidates',
+            'create_or_update_draft',
         ],
         'article_sources' => ['new', 'legacy', 'all'],
         'list_parameters' => [
@@ -1537,11 +1387,25 @@ function getCapabilities(): array
             'limit',
             'offset',
         ],
+        'methods' => [
+            'GET' => ['ping','capabilities','bootstrap','iblocks','iblock_properties','doctors','doctor','doctor_properties','articles','article','article_properties','article_sections','article_structures','clinics','clinic','prices','price','services','service','dictionaries','system_manifest'],
+            'POST' => ['internal_uniqueness', 'cannibalization_check', 'linking_candidates', 'create_or_update_draft'],
+        ],
+        'write_actions' => [
+            'create_or_update_draft' => [
+                'auth' => 'write_token',
+                'target_iblock' => 'articles',
+                'active' => 'N',
+                'allowed_property_codes' => ArticleDraftWriter::allowedPropertyCodes(),
+            ],
+        ],
         'security' => [
             'authentication' => 'Bearer token',
+            'read_token' => 'read actions',
+            'write_token' => 'write actions',
             'sensitive_property_filtering' => true,
             'doctor_property_allowlist' => true,
-            'write_actions' => false,
+            'write_actions' => true,
         ],
     ];
 }
@@ -1556,163 +1420,4 @@ function getBootstrap(array $config): array
         'clinics' => getGenericIblockList($config, 'clinics', true),
         'prices' => getGenericIblockList($config, 'prices', true),
     ];
-}
-
-requireGetMethod();
-
-$config = require __DIR__ . '/config.php';
-authenticate($config);
-
-if (!Loader::includeModule('iblock')) {
-    temedSeoSendError('Модуль iblock недоступен', 500);
-}
-
-$action = getStringParam('action', 'ping');
-
-switch ($action) {
-    case 'ping':
-        sendSuccess([
-            'message' => 'TEMED SEO API работает',
-            'server_time' => date(DATE_ATOM),
-        ]);
-        break;
-
-    case 'capabilities':
-        sendSuccess(getCapabilities());
-        break;
-
-    case 'bootstrap':
-        sendSuccess(getBootstrap($config));
-        break;
-
-    case 'doctors':
-        $items = getDoctorList($config);
-        sendSuccess($items, ['count' => count($items)]);
-        break;
-
-    case 'doctor':
-        sendSuccess(getDoctorDetail($config, getIntParam('id')));
-        break;
-
-    case 'doctor_properties':
-        $items = getPropertyDefinitions(
-            getConfiguredIblockId($config, 'doctors'),
-            getAllowedDoctorPropertyCodes()
-        );
-        sendSuccess($items, ['count' => count($items)]);
-        break;
-
-    case 'articles':
-        $result = getArticleList($config);
-        sendSuccess($result['items'], [
-            'count' => count($result['items']),
-            'total' => $result['total'],
-            'offset' => $result['offset'],
-            'limit' => $result['limit'],
-            'source' => $result['source'],
-        ]);
-        break;
-
-    case 'article':
-        sendSuccess(
-            getArticleDetail(
-                $config,
-                getIntParam('id'),
-                getStringParam('source', 'all')
-            )
-        );
-        break;
-
-    case 'article_properties':
-        $source = getStringParam('source', 'new');
-
-        if ($source === 'new') {
-            $iblockId = getConfiguredIblockId($config, 'articles');
-            $allowedCodes = null;
-        } elseif ($source === 'legacy') {
-            $iblockId = getConfiguredIblockId($config, 'legacy_articles');
-            $allowedCodes = null;
-        } else {
-            temedSeoSendError(
-                'Некорректный параметр source',
-                400,
-                ['allowed_sources' => ['new', 'legacy']]
-            );
-        }
-
-        $items = getPropertyDefinitions($iblockId, $allowedCodes);
-        sendSuccess($items, ['count' => count($items), 'source' => $source]);
-        break;
-
-    case 'article_structures':
-        $structures = temedSeoLoadArticleStructures();
-        sendSuccess(
-            $structures,
-            ['count' => count($structures['configs'])]
-        );
-        break;
-
-    case 'article_sections':
-        $source = getStringParam('source', 'new');
-
-        if ($source === 'new') {
-            $iblockId = getConfiguredIblockId($config, 'articles');
-        } elseif ($source === 'legacy') {
-            $iblockId = getConfiguredIblockId($config, 'legacy_articles');
-        } else {
-            temedSeoSendError(
-                'Некорректный параметр source',
-                400,
-                ['allowed_sources' => ['new', 'legacy']]
-            );
-        }
-
-        $items = getSectionsFromIblock($iblockId, $config);
-        sendSuccess($items, ['count' => count($items), 'source' => $source]);
-        break;
-
-    case 'clinics':
-        $result = getGenericIblockList($config, 'clinics', true);
-        sendSuccess($result['items'], [
-            'count' => count($result['items']),
-            'total' => $result['total'],
-            'offset' => $result['offset'],
-            'limit' => $result['limit'],
-        ]);
-        break;
-
-    case 'clinic':
-        sendSuccess(
-            getGenericIblockDetail($config, 'clinics', getIntParam('id'))
-        );
-        break;
-
-    case 'prices':
-    case 'services':
-        $result = getGenericIblockList($config, 'prices', true);
-        sendSuccess($result['items'], [
-            'count' => count($result['items']),
-            'total' => $result['total'],
-            'offset' => $result['offset'],
-            'limit' => $result['limit'],
-        ]);
-        break;
-
-    case 'price':
-    case 'service':
-        sendSuccess(
-            getGenericIblockDetail($config, 'prices', getIntParam('id'))
-        );
-        break;
-
-    case 'dictionaries':
-        sendSuccess(getDictionaries($config));
-        break;
-
-    default:
-        temedSeoSendError(
-            'Unknown action',
-            400,
-            ['allowed_actions' => getCapabilities()['actions']]
-        );
 }
