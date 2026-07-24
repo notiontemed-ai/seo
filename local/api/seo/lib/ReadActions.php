@@ -1260,7 +1260,7 @@ function temedSeoLoadArticleStructures(): array
         return $cache;
     }
 
-    $filePath = __DIR__ . '/data/article_structures.json';
+    $filePath = dirname(__DIR__) . '/data/article_structures.json';
 
     if (!is_file($filePath) || !is_readable($filePath)) {
         temedSeoSendError(
