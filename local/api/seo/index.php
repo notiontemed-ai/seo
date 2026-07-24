@@ -10,8 +10,12 @@ require_once __DIR__ . '/lib/TextNormalizer.php';
 require_once __DIR__ . '/lib/ArticleCorpusRepository.php';
 require_once __DIR__ . '/lib/InternalUniquenessService.php';
 require_once __DIR__ . '/lib/SystemManifestService.php';
+require_once __DIR__ . '/lib/ArticleDraftWriter.php';
 
-const API_VERSION = '1.3.0';
+const WRITE_ACTIONS = ['create_or_update_draft'];
+const MAX_WRITE_BODY_BYTES = 1048576; // 1 МБ
+
+const API_VERSION = '1.4.0';
 const DEFAULT_BASE_URL = 'https://temed.ru';
 const DEFAULT_LIST_LIMIT = 500;
 const MAX_LIST_LIMIT = 1000;
@@ -125,10 +129,10 @@ function requireGetMethod(): void
     }
 }
 
-function authenticate(array $config): void
+function authenticateWithToken(array $config, string $configKey): void
 {
-    $expectedToken = trim((string)($config['read_token'] ?? ''));
-    if ($expectedToken === '' && isset($config['bearer_token'])) {
+    $expectedToken = trim((string)($config[$configKey] ?? ''));
+    if ($configKey === 'read_token' && $expectedToken === '' && isset($config['bearer_token'])) {
         error_log('[TEMED SEO API] Deprecated bearer_token config key is used; migrate to read_token.');
         $expectedToken = trim((string)$config['bearer_token']);
     }
@@ -137,12 +141,14 @@ function authenticate(array $config): void
     }
     $authorization = getAuthorizationHeader();
 
-    if (
-        $expectedToken === ''
-        || !hash_equals('Bearer ' . $expectedToken, $authorization)
-    ) {
+    if (!hash_equals('Bearer ' . $expectedToken, $authorization)) {
         temedSeoSendError('Unauthorized', 401);
     }
+}
+
+function authenticate(array $config): void
+{
+    authenticateWithToken($config, 'read_token');
 }
 
 function getConfiguredIblockId(array $config, string $key): int
@@ -1711,7 +1717,7 @@ function temedSeoLoadArticleStructures(): array
 function getCapabilities(): array
 {
     return [
-        'read_only' => true,
+        'read_only' => false,
         'actions' => [
             'ping',
             'capabilities',
@@ -1735,6 +1741,7 @@ function getCapabilities(): array
             'dictionaries',
             'system_manifest',
             'internal_uniqueness',
+            'create_or_update_draft',
         ],
         'article_sources' => ['new', 'legacy', 'all'],
         'list_parameters' => [
@@ -1746,13 +1753,23 @@ function getCapabilities(): array
         ],
         'methods' => [
             'GET' => ['ping','capabilities','bootstrap','iblocks','iblock_properties','doctors','doctor','doctor_properties','articles','article','article_properties','article_sections','article_structures','clinics','clinic','prices','price','services','service','dictionaries','system_manifest'],
-            'POST' => ['internal_uniqueness'],
+            'POST' => ['internal_uniqueness', 'create_or_update_draft'],
+        ],
+        'write_actions' => [
+            'create_or_update_draft' => [
+                'auth' => 'write_token',
+                'target_iblock' => 'articles',
+                'active' => 'N',
+                'allowed_property_codes' => ArticleDraftWriter::allowedPropertyCodes(),
+            ],
         ],
         'security' => [
             'authentication' => 'Bearer token',
+            'read_token' => 'read actions',
+            'write_token' => 'write actions',
             'sensitive_property_filtering' => true,
             'doctor_property_allowlist' => true,
-            'write_actions' => false,
+            'write_actions' => true,
         ],
     ];
 }
@@ -1777,11 +1794,6 @@ $config = require $configPath;
 if (!is_array($config)) {
     temedSeoSendError('API_NOT_CONFIGURED', 503, ['error_code' => 'API_NOT_CONFIGURED']);
 }
-authenticate($config);
-
-if (!Loader::includeModule('iblock')) {
-    temedSeoSendError('Модуль iblock недоступен', 500);
-}
 
 $method = strtoupper((string)($_SERVER['REQUEST_METHOD'] ?? 'GET'));
 $postPayload = [];
@@ -1794,6 +1806,21 @@ if ($method === 'POST') {
     $postPayload = is_array($decoded) ? $decoded : [];
 }
 $action = $method === 'POST' ? trim((string)($postPayload['action'] ?? '')) : getStringParam('action', 'ping');
+
+// Write-действия используют отдельный write-token и лимит тела 1 МБ.
+if (in_array($action, WRITE_ACTIONS, true)) {
+    if (strlen((string)($rawBody ?? '')) > MAX_WRITE_BODY_BYTES) {
+        temedSeoSendError('Тело запроса превышает лимит 1 МБ', 413, ['error_code' => 'PAYLOAD_TOO_LARGE']);
+    }
+    authenticateWithToken($config, 'write_token');
+} else {
+    authenticate($config);
+}
+
+if (!Loader::includeModule('iblock')) {
+    temedSeoSendError('Модуль iblock недоступен', 500);
+}
+
 $methods = getCapabilities()['methods'];
 if (!isset($methods[$method]) || !in_array($action, $methods[$method], true)) {
     header('Allow: GET, POST');
@@ -1970,6 +1997,26 @@ switch ($action) {
             sendSuccess((new InternalUniquenessService($config, new ArticleCorpusRepository($config)))->check($postPayload));
         } catch (InvalidArgumentException $exception) {
             temedSeoSendError($exception->getMessage(), 400);
+        }
+        break;
+
+    case 'create_or_update_draft':
+        try {
+            $writer = new ArticleDraftWriter($config, new BitrixArticleWriteGateway());
+            $result = $writer->write($postPayload);
+            sendSuccess(
+                $result['data'],
+                ['warnings' => $result['warnings']],
+                $result['http_status']
+            );
+        } catch (DraftWriteException $exception) {
+            temedSeoSendError(
+                $exception->getMessage(),
+                $exception->httpStatus,
+                ['error_code' => $exception->errorCode] + $exception->details
+            );
+        } catch (InvalidArgumentException $exception) {
+            temedSeoSendError($exception->getMessage(), 400, ['error_code' => 'INVALID_INPUT']);
         }
         break;
 

@@ -295,6 +295,7 @@ $config = require $configFile;
 
 $apiUrl = trim((string)($config['temed_seo_api_url'] ?? ''));
 $apiToken = trim((string)($config['temed_seo_api_token'] ?? ''));
+$apiWriteToken = trim((string)($config['temed_seo_api_write_token'] ?? ''));
 $n8nBaseUrl = trim((string)($config['n8n_base_url'] ?? ''));
 $n8nSecret = trim((string)($config['n8n_secret'] ?? ''));
 
@@ -499,6 +500,45 @@ if ($action === 'transcribe_case') {
     }
 }
 
+// Запись неактивного черновика в Bitrix идёт напрямую в TEMED SEO API
+// с серверным write-token (в браузер токен не попадает).
+if ($action === 'create_or_update_draft') {
+    if ($apiUrl === '') {
+        proxySendJson(
+            [
+                'success' => false,
+                'error' => 'В config.php не настроен TEMED SEO API URL',
+            ],
+            500
+        );
+    }
+
+    if ($apiWriteToken === '' || $apiWriteToken === 'CHANGE_ME') {
+        proxySendJson(
+            [
+                'success' => false,
+                'error' => 'В config.php не настроен temed_seo_api_write_token',
+            ],
+            500
+        );
+    }
+
+    $result = proxyHttpRequest(
+        $apiUrl,
+        'POST',
+        [
+            'Authorization: Bearer ' . $apiWriteToken,
+            'Accept: application/json',
+            'Content-Type: application/json',
+        ],
+        proxyEncode($payload),
+        10,
+        120
+    );
+
+    proxyRelay($result, 'TEMED SEO API');
+}
+
 // Внутренняя уникальность считается нативно в PHP (TEMED SEO API POST
 // internal_uniqueness), n8n этот алгоритм не реализует.
 if ($action === 'check_internal_uniqueness') {
@@ -576,7 +616,7 @@ proxySendJson(
     [
         'success' => false,
         'error' => 'Недопустимое действие',
-        'allowed_actions' => array_merge(['check_internal_uniqueness'], $n8nActions),
+        'allowed_actions' => array_merge(['check_internal_uniqueness', 'create_or_update_draft'], $n8nActions),
     ],
     400
 );
