@@ -191,56 +191,30 @@ if (empty($_SESSION['seo_editor_authenticated'])) {
     exit;
 }
 
-$editorFile = __DIR__ . '/editor.html';
+// React-приложение (Vite): собранный index.html из dist/. Исходники — в app/,
+// сборка `npm run build` кладёт результат в dist/. Авторизация и сессии выше
+// не меняются.
+$distIndex = __DIR__ . '/dist/index.html';
 
-if (!is_file($editorFile) || !is_readable($editorFile)) {
+if (!is_file($distIndex) || !is_readable($distIndex)) {
     http_response_code(500);
-    exit('Файл editor.html недоступен.');
+    exit('Сборка редактора не найдена. Выполните `npm run build` в internal/seo-editor/app.');
 }
 
-$html = file_get_contents($editorFile);
+$html = file_get_contents($distIndex);
 
 if ($html === false) {
     http_response_code(500);
-    exit('Не удалось прочитать editor.html.');
+    exit('Не удалось прочитать dist/index.html.');
 }
 
-$cssFile = __DIR__ . '/assets/css/editor.css';
-$jsFile = __DIR__ . '/assets/js/editor.js';
-
-function assetVersion(string $file): string
-{
-    if (!is_file($file) || !is_readable($file)) {
-        return '';
-    }
-
-    $hash = hash_file('sha256', $file);
-
-    if (!is_string($hash) || $hash === '') {
-        return '';
-    }
-
-    return substr($hash, 0, 12);
-}
-
-$cssVersion = assetVersion($cssFile);
-$jsVersion = assetVersion($jsFile);
-
-if ($cssVersion === '' || $jsVersion === '') {
-    error_log('TEMED SEO Editor asset file is unavailable or unreadable.');
-    http_response_code(500);
-    exit('Файлы интерфейса редактора недоступны.');
-}
-
-$cssVersion = htmlspecialchars($cssVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-$jsVersion = htmlspecialchars($jsVersion, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
-
-$html = preg_replace('~(assets/css/editor\.css\?v=)[^"\']*~', '${1}' . $cssVersion, $html);
-$html = preg_replace('~(assets/js/editor\.js\?v=)[^"\']*~', '${1}' . $jsVersion, $html);
-
-if (strpos($html, '__EDITOR_') !== false) {
-    error_log('TEMED SEO Editor: asset version placeholder was not replaced in editor.html.');
-}
+// Vite собран с base './'. Страница отдаётся из каталога редактора, поэтому
+// относительные пути ассетов ./assets/... переписываем в dist/assets/...
+$html = str_replace(
+    ['src="./assets/', 'href="./assets/'],
+    ['src="dist/assets/', 'href="dist/assets/'],
+    $html
+);
 
 $logout = <<<'HTML'
 <a
