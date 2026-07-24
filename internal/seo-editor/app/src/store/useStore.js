@@ -59,10 +59,14 @@ export const useStore = create((set, get) => ({
   articleList: [],
 
   // ── Навигация / UI ──
+  section: 'content', // 'content' | 'analytics' | 'admin' — верхнеуровневый раздел
+  contentView: 'wizard', // 'wizard' | 'drafts' — вкладка внутри «Генерации контента»
   step: 1,
   debug: false,
-  panel: null, // 'assistant' | 'drafts' | 'transcribe' | null
+  panel: null, // 'assistant' | null (глобальная боковая панель)
   notice: null, // {type, text}
+  // Индикатор автосохранения: метка времени последнего локального снапшота.
+  localSavedAt: null,
 
   // ── Данные статьи ──
   article: emptyArticle(),
@@ -80,7 +84,9 @@ export const useStore = create((set, get) => ({
   setCheckHash: (kind, hash) =>
     set((s) => ({ checkHashes: { ...s.checkHashes, [kind]: hash } })),
 
-  setStep: (step) => set({ step }),
+  setSection: (section) => set({ section }),
+  setContentView: (contentView) => set({ contentView }),
+  setStep: (step) => set({ step, section: 'content', contentView: 'wizard' }),
   setDebug: (debug) => set({ debug }),
   setPanel: (panel) => set((s) => ({ panel: s.panel === panel ? null : panel })),
   setNotice: (notice) => set({ notice }),
@@ -229,8 +235,9 @@ export const useStore = create((set, get) => ({
 
   persist: () => {
     try {
-      const { article, step } = get();
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ article, step }));
+      const { article, step, section } = get();
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ article, step, section }));
+      set({ localSavedAt: Date.now() });
     } catch (_) {}
   },
   restore: () => {
@@ -238,7 +245,14 @@ export const useStore = create((set, get) => ({
       const raw = sessionStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
-      if (data && data.article) set({ article: { ...emptyArticle(), ...data.article }, step: data.step || 1 });
+      if (data && data.article) {
+        set({
+          article: { ...emptyArticle(), ...data.article },
+          step: data.step || 1,
+          // Старые сессии без поля section открываются в «Генерации контента».
+          section: data.section || 'content',
+        });
+      }
     } catch (_) {}
     // Активная проверка TEXT.RU переживает перезагрузку страницы.
     const textruSession = loadTextruSession();

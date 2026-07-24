@@ -14,8 +14,12 @@
 
 `ping`, `capabilities`, `bootstrap`, `iblocks`, `iblock_properties`, `doctors`,
 `doctor`, `doctor_properties`, `articles`, `article`, `article_properties`,
-`article_sections`, `article_structures`, `clinics`, `clinic`, `prices`/`services`,
+`article_sections`, `clinics`, `clinic`, `prices`/`services`,
 `price`/`service`, `dictionaries`, `system_manifest`.
+
+Действие `article_structures` удалено из публичного API: конфиг структур
+перенесён в редактор (`internal/seo-editor/data/article_structures.json`) и
+отдаётся его `proxy.php?action=article_structures` локально.
 
 Параметры списков: `q`, `active`, `section_id`, `limit`, `offset`.
 

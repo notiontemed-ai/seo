@@ -1,6 +1,5 @@
 // Кейсовый вход (этап 8.3): выбор темы из транскрибированного кейса
-// предзаполняет шаг «Задача». Здесь — транслитерация названия в символьный
-// код и эвристика типа статьи по fit/интенту темы.
+// предзаполняет шаг «Задача». Здесь — транслитерация названия в символьный код.
 
 const TRANSLIT = {
   а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
@@ -24,34 +23,17 @@ export function translitCode(name) {
     .slice(0, 100);
 }
 
-// Эвристика типа статьи по названию темы и fit-описанию. Возвращает XML_ID
-// варианта ARTICLE_TYPE только если он существует в справочнике — иначе ''.
-const TYPE_RULES = [
-  [/сравн|против|или лучше|что выбрать|vs\b/i, ['comparison']],
-  [/диагност|мрт|кт\b|узи|рентген|анализ|обследован/i, ['diagnostics']],
-  [/лечени|терапи|операц|реабилитац|восстановлен/i, ['treatment']],
-  [/симптом|признак|болит|боль\b/i, ['symptoms', 'informational']],
-];
-
-export function guessArticleType(text, articleTypes) {
-  const available = new Set((articleTypes || []).map((t) => t.xml_id));
-  const haystack = String(text || '');
-  for (const [re, candidates] of TYPE_RULES) {
-    if (re.test(haystack)) {
-      const found = candidates.find((c) => available.has(c));
-      if (found) return found;
-    }
-  }
-  return available.has('informational') ? 'informational' : '';
-}
-
-// Патч статьи при выборе темы кейса.
-export function topicToArticlePatch(topic, caseData, articleTypes) {
+// Патч статьи при выборе темы кейса. Тип статьи удалён (ТЗ 7); тема приносит
+// primary и secondary запросы (ТЗ 8).
+export function topicToArticlePatch(topic, caseData) {
+  const secondary = Array.isArray(topic.secondary_queries)
+    ? topic.secondary_queries.map((s) => String(s).trim()).filter(Boolean)
+    : [];
   return {
     name: topic.title || '',
     primary_query: topic.primary_query || '',
+    secondary_queries: secondary,
     code: translitCode(topic.title || topic.primary_query || ''),
-    article_type: guessArticleType((topic.title || '') + ' ' + (topic.fit || ''), articleTypes),
     case_transcript: caseData.transcript || '',
     case_summary: caseData.summary || '',
   };

@@ -10,7 +10,8 @@ npm run build      # → internal/seo-editor/dist/
 
 ## Что выкладывать на сервер (вручную, после бэкапа)
 
-- `internal/seo-editor/dist/` (собранный редактор) + `index.php`, `proxy.php`.
+- `internal/seo-editor/dist/` (собранный редактор) + `index.php`, `proxy.php`,
+  `data/article_structures.json` (конфиг структур, читается редактором локально).
 - `local/api/seo/index.php` и `local/api/seo/lib/*`.
 - При необходимости — `internal/seo-editor/export.php` и его lib (запасной XML).
 

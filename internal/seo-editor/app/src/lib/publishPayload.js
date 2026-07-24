@@ -16,7 +16,8 @@ export function buildProperties(article, structures) {
   const setIf = (k, v) => {
     if (v !== '' && v != null && v !== 0 && !(Array.isArray(v) && v.length === 0)) props[k] = v;
   };
-  setIf('ARTICLE_TYPE', article.article_type);
+  // ARTICLE_TYPE (847) удалён из редактора (ТЗ 7): свойство в Bitrix не
+  // заполняется, экспортёр допускает пустое значение.
   setIf('PRIMARY_QUERY', article.primary_query);
   setIf('SECONDARY_QUERIES', article.secondary_queries);
   setIf('SEARCH_INTENT', article.search_intent);
