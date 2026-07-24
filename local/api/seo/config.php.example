@@ -3,7 +3,12 @@
 declare(strict_types=1);
 
 return [
+    // Токен для read-действий (GET-справочники, POST internal_uniqueness).
     'read_token' => 'CHANGE_ME',
+
+    // Отдельный токен для write-действий (create_or_update_draft).
+    // НЕ должен совпадать с read_token. Пусто/CHANGE_ME → 503 API_NOT_CONFIGURED.
+    'write_token' => 'CHANGE_ME',
 
     'base_url' => 'https://temed.ru',
 

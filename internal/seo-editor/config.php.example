@@ -7,8 +7,11 @@ return [
     // TEMED SEO API (read-only): GET-справочники и POST internal_uniqueness.
     // URL endpoint'а local/api/seo/index.php.
     'temed_seo_api_url' => 'https://example.ru/local/api/seo/index.php',
-    // Bearer-токен для доступа к TEMED SEO API.
+    // Bearer-токен для доступа к TEMED SEO API (read-действия).
     'temed_seo_api_token' => 'CHANGE_ME',
+    // Отдельный write-токен для POST create_or_update_draft. В браузер не
+    // попадает: proxy.php добавляет его в Authorization при записи черновика.
+    'temed_seo_api_write_token' => 'CHANGE_ME',
 
     // n8n webhook (AI/TEXT.RU и черновики): базовый URL продакшн-вебхука
     // workflow «TEMED SEO Editor».
