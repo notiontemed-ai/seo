@@ -1,0 +1,210 @@
+{
+  "shared_ymyl_rules": {
+    "no_self_diagnosis": "Не ставить заочный диагноз и не назначать лечение конкретному читателю.",
+    "sources_required": "Числа и медицинские утверждения — только с указанным источником.",
+    "no_guarantees": "Не обещать результат и не давать гарантий эффективности.",
+    "disclaimer_required": "Обязателен дисклеймер в подвале статьи."
+  },
+  "configs": [
+    {
+      "id": "inverted_pyramid",
+      "name": "Перевёрнутая пирамида",
+      "version": "1.0.0",
+      "intent": "informational",
+      "when_to_use": "Запрос с чётким ответом: главный вывод в первом экране, дальше детализация по убыванию важности.",
+      "primary_metric": "Попадание в featured snippet / нулевую позицию",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "h2", "required": true, "repeat": "2-6" },
+        { "block": "causes", "required": false, "repeat": false },
+        { "block": "diagnostics", "required": false, "repeat": false },
+        { "block": "treatment_methods", "required": false, "repeat": false },
+        { "block": "when_to_see_doctor", "required": false, "repeat": false },
+        { "block": "faq", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Затянутое вступление до ответа на запрос",
+        "Заочная диагностика конкретного читателя",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "step_guide",
+      "name": "Пошаговое руководство",
+      "version": "1.0.0",
+      "intent": "informational",
+      "when_to_use": "Читатель хочет выполнить процесс: последовательные шаги от подготовки до результата.",
+      "primary_metric": "Дочитываемость и глубина скролла",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "h2", "required": true, "repeat": "3-7" },
+        { "block": "list", "required": false, "repeat": "1-7" },
+        { "block": "when_to_see_doctor", "required": false, "repeat": false },
+        { "block": "faq", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Нарушение последовательности шагов",
+        "Назначение лечения конкретному читателю",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "qa_hub",
+      "name": "Вопрос-ответ (PAA)",
+      "version": "1.0.0",
+      "intent": "informational",
+      "when_to_use": "Тема распадается на множество смежных вопросов: FAQ-центричная статья под «Люди также спрашивают».",
+      "primary_metric": "Показы в PAA и featured snippets",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "faq", "required": true, "repeat": false },
+        { "block": "myth_fact", "required": false, "repeat": false },
+        { "block": "when_to_see_doctor", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Дублирование одного вопроса разными формулировками",
+        "Заочная диагностика конкретного читателя",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "problem_solution",
+      "name": "Проблема → Решение",
+      "version": "1.0.0",
+      "intent": "commercial_informational",
+      "when_to_use": "Читатель пришёл с болью: описание проблемы → метод клиники → путь к записи.",
+      "primary_metric": "Конверсия в заявку на приём",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "symptoms", "required": false, "repeat": false },
+        { "block": "treatment_methods", "required": true, "repeat": false },
+        { "block": "case_study", "required": false, "repeat": "1-3" },
+        { "block": "expert_opinion", "required": true, "repeat": false },
+        { "block": "appointment_form", "required": true, "repeat": false },
+        { "block": "faq", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Запугивание и давление для записи",
+        "Гарантии результата лечения",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "procedure_az",
+      "name": "Процедура от А до Я",
+      "version": "1.0.0",
+      "intent": "commercial_informational",
+      "when_to_use": "Полный разбор процедуры или обследования клиники: показания, подготовка, этапы, что дальше.",
+      "primary_metric": "Конверсия в запись на процедуру",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "when_to_see_doctor", "required": true, "repeat": false },
+        { "block": "diagnostics", "required": false, "repeat": false },
+        { "block": "treatment_methods", "required": true, "repeat": false },
+        { "block": "stats_highlight", "required": false, "repeat": false },
+        { "block": "appointment_form", "required": true, "repeat": false },
+        { "block": "faq", "required": true, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Обещание точного результата до осмотра",
+        "Гарантии эффективности",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "expert_review",
+      "name": "Экспертный разбор с кейсами",
+      "version": "1.0.0",
+      "intent": "commercial_informational",
+      "when_to_use": "Ставка на E-E-A-T: мнение врача, реальные случаи из практики, статистика клиники.",
+      "primary_metric": "Конверсия в заявку и экспертные сигналы E-E-A-T",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "expert_opinion", "required": true, "repeat": "1-2" },
+        { "block": "case_study", "required": true, "repeat": "1-3" },
+        { "block": "stats_highlight", "required": false, "repeat": false },
+        { "block": "appointment_form", "required": true, "repeat": false },
+        { "block": "faq", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Выдуманные кейсы и цитаты врача",
+        "Гарантии результата лечения",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "versus_verdict",
+      "name": "Сравнение с вердиктом",
+      "version": "1.0.0",
+      "intent": "comparative",
+      "when_to_use": "Запросы «X или Y / что лучше»: таблица по критериям → рекомендация по ситуациям читателя.",
+      "primary_metric": "CTR по «vs»-запросам",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "comparison_table", "required": true, "repeat": false },
+        { "block": "h2", "required": true, "repeat": "2-5" },
+        { "block": "expert_opinion", "required": false, "repeat": false },
+        { "block": "myth_fact", "required": false, "repeat": false },
+        { "block": "faq", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Категоричный вердикт без учёта ситуаций",
+        "Однобокое сравнение в пользу услуги клиники без критериев",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "pros_cons",
+      "name": "Плюсы и минусы",
+      "version": "1.0.0",
+      "intent": "comparative",
+      "when_to_use": "Честный разбор каждого варианта: достоинства и недостатки списками, без навязывания выбора.",
+      "primary_metric": "Дочитываемость и полнота охвата вариантов",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "h2", "required": true, "repeat": "2-4" },
+        { "block": "list", "required": true, "repeat": "2-8" },
+        { "block": "comparison_table", "required": false, "repeat": false },
+        { "block": "expert_opinion", "required": false, "repeat": false },
+        { "block": "faq", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Замалчивание значимых минусов варианта",
+        "Гарантии результата",
+        "Числа без источника"
+      ]
+    },
+    {
+      "id": "ranking",
+      "name": "Рейтинг вариантов",
+      "version": "1.0.0",
+      "intent": "comparative",
+      "when_to_use": "Листикл под запросы «лучшие / топ-N»: ранжированный перечень методов или вариантов с критериями отбора.",
+      "primary_metric": "CTR по «лучшие/топ»-запросам",
+      "structure": [
+        { "block": "short_answer", "required": true, "repeat": false },
+        { "block": "h2", "required": true, "repeat": "3-10" },
+        { "block": "comparison_table", "required": false, "repeat": false },
+        { "block": "stats_highlight", "required": false, "repeat": false },
+        { "block": "expert_opinion", "required": false, "repeat": false },
+        { "block": "appointment_form", "required": false, "repeat": false },
+        { "block": "faq", "required": false, "repeat": false },
+        { "block": "sources", "required": true, "repeat": false }
+      ],
+      "forbidden": [
+        "Рейтинг без объявленных критериев отбора",
+        "Принижение конкурентов",
+        "Числа без источника"
+      ]
+    }
+  ],
+  "count": 9
+}
