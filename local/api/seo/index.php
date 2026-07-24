@@ -9,6 +9,8 @@ use Bitrix\Main\Loader;
 require_once __DIR__ . '/lib/TextNormalizer.php';
 require_once __DIR__ . '/lib/ArticleCorpusRepository.php';
 require_once __DIR__ . '/lib/InternalUniquenessService.php';
+require_once __DIR__ . '/lib/CorpusCache.php';
+require_once __DIR__ . '/lib/CannibalizationService.php';
 require_once __DIR__ . '/lib/SystemManifestService.php';
 require_once __DIR__ . '/lib/ContentReferenceResolver.php';
 require_once __DIR__ . '/lib/ArticleContent.php';
@@ -19,7 +21,7 @@ require_once __DIR__ . '/lib/ArticleDraftWriter.php';
 const WRITE_ACTIONS = ['create_or_update_draft'];
 const MAX_WRITE_BODY_BYTES = 1048576; // 1 МБ
 
-const API_VERSION = '1.5.0';
+const API_VERSION = '1.6.0';
 const DEFAULT_BASE_URL = 'https://temed.ru';
 const DEFAULT_LIST_LIMIT = 500;
 const MAX_LIST_LIMIT = 1000;
@@ -1750,6 +1752,7 @@ function getCapabilities(): array
             'dictionaries',
             'system_manifest',
             'internal_uniqueness',
+            'cannibalization_check',
             'create_or_update_draft',
         ],
         'article_sources' => ['new', 'legacy', 'all'],
@@ -1762,7 +1765,7 @@ function getCapabilities(): array
         ],
         'methods' => [
             'GET' => ['ping','capabilities','bootstrap','iblocks','iblock_properties','doctors','doctor','doctor_properties','articles','article','article_properties','article_sections','article_structures','clinics','clinic','prices','price','services','service','dictionaries','system_manifest'],
-            'POST' => ['internal_uniqueness', 'create_or_update_draft'],
+            'POST' => ['internal_uniqueness', 'cannibalization_check', 'create_or_update_draft'],
         ],
         'write_actions' => [
             'create_or_update_draft' => [
@@ -2004,6 +2007,16 @@ switch ($action) {
     case 'internal_uniqueness':
         try {
             sendSuccess((new InternalUniquenessService($config, new ArticleCorpusRepository($config)))->check($postPayload));
+        } catch (InvalidArgumentException $exception) {
+            temedSeoSendError($exception->getMessage(), 400);
+        }
+        break;
+
+    case 'cannibalization_check':
+        try {
+            $forceRefresh = !empty($postPayload['refresh_corpus']);
+            $corpus = (new CorpusCache($config, new ArticleCorpusRepository($config)))->getArticles($forceRefresh);
+            sendSuccess((new CannibalizationService($config, $corpus))->check($postPayload));
         } catch (InvalidArgumentException $exception) {
             temedSeoSendError($exception->getMessage(), 400);
         }

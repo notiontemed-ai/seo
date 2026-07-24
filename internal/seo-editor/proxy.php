@@ -539,8 +539,35 @@ if ($action === 'create_or_update_draft') {
     proxyRelay($result, 'TEMED SEO API');
 }
 
-// Внутренняя уникальность считается нативно в PHP (TEMED SEO API POST
-// internal_uniqueness), n8n этот алгоритм не реализует.
+// Каннибализация и внутренняя уникальность считаются нативно в PHP
+// (TEMED SEO API POST), n8n эти алгоритмы не реализует.
+if ($action === 'cannibalization_check') {
+    if ($apiUrl === '' || $apiToken === '') {
+        proxySendJson(
+            [
+                'success' => false,
+                'error' => 'В config.php не настроены TEMED SEO API URL или token',
+            ],
+            500
+        );
+    }
+
+    $result = proxyHttpRequest(
+        $apiUrl,
+        'POST',
+        [
+            'Authorization: Bearer ' . $apiToken,
+            'Accept: application/json',
+            'Content-Type: application/json',
+        ],
+        proxyEncode($payload),
+        10,
+        120
+    );
+
+    proxyRelay($result, 'TEMED SEO API');
+}
+
 if ($action === 'check_internal_uniqueness') {
     if ($apiUrl === '' || $apiToken === '') {
         proxySendJson(
@@ -616,7 +643,7 @@ proxySendJson(
     [
         'success' => false,
         'error' => 'Недопустимое действие',
-        'allowed_actions' => array_merge(['check_internal_uniqueness', 'create_or_update_draft'], $n8nActions),
+        'allowed_actions' => array_merge(['check_internal_uniqueness', 'cannibalization_check', 'create_or_update_draft'], $n8nActions),
     ],
     400
 );
