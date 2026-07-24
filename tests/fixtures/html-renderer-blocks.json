@@ -1,0 +1,12 @@
+{
+  "blocks": [
+    {"type": "short_answer", "text": "Боль в спине чаще связана с мышцами."},
+    {"type": "h2", "text": "Симптомы"},
+    {"type": "symptoms", "items": [{"text": "Ноющая боль", "red_flag": false}, {"text": "Онемение ног", "red_flag": true}]},
+    {"type": "h2", "text": "Диагностика"},
+    {"type": "diagnostics", "items": [{"method": "МРТ", "what_shows": "структуру", "related_service_id": 301}]},
+    {"type": "p", "text": "Текст с **акцентом** и [ссылкой](https://temed.ru)."},
+    {"type": "faq", "items": [{"q": "Опасно ли это?", "a": "Обычно нет."}]},
+    {"type": "sources", "items": ["Клинические рекомендации, 2025"]}
+  ]
+}
