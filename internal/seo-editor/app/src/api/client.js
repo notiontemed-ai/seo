@@ -60,7 +60,7 @@ export const api = {
   applyMedAnswers: (data) => post({ action: 'apply_med_answers', data }),
   suggestAnchor: (data) => post({ action: 'suggest_anchor', data }),
   assistantChat: (data) => post({ action: 'assistant_chat', data }),
-  transcribeCase: (payload) => post({ action: 'transcribe_case', ...payload }),
+  transcribeCase: (payload) => post({ action: 'transcribe_case', data: payload }),
   startExternalUniqueness: (data) => post({ action: 'start_external_uniqueness', data }),
   getExternalUniqueness: (data) => post({ action: 'get_external_uniqueness', data }),
 
