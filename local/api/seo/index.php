@@ -10,12 +10,16 @@ require_once __DIR__ . '/lib/TextNormalizer.php';
 require_once __DIR__ . '/lib/ArticleCorpusRepository.php';
 require_once __DIR__ . '/lib/InternalUniquenessService.php';
 require_once __DIR__ . '/lib/SystemManifestService.php';
+require_once __DIR__ . '/lib/ContentReferenceResolver.php';
+require_once __DIR__ . '/lib/ArticleContent.php';
+require_once __DIR__ . '/lib/HtmlRenderer.php';
+require_once __DIR__ . '/lib/HtmlToBlocksParser.php';
 require_once __DIR__ . '/lib/ArticleDraftWriter.php';
 
 const WRITE_ACTIONS = ['create_or_update_draft'];
 const MAX_WRITE_BODY_BYTES = 1048576; // 1 МБ
 
-const API_VERSION = '1.4.0';
+const API_VERSION = '1.5.0';
 const DEFAULT_BASE_URL = 'https://temed.ru';
 const DEFAULT_LIST_LIMIT = 500;
 const MAX_LIST_LIMIT = 1000;
@@ -1343,6 +1347,8 @@ function getArticleDetail(array $config, int $articleId, string $source): array
         'preview_text_type' => (string)($fields['PREVIEW_TEXT_TYPE'] ?? ''),
         'detail_text' => $detailText,
         'detail_text_type' => (string)($fields['DETAIL_TEXT_TYPE'] ?? ''),
+        // Обратная совместимость: HTML → блоки article_content v2 для редактора.
+        'article_content' => (new HtmlToBlocksParser())->parse($detailText),
         'summary' => makeSummary($previewText, $detailText, 500),
         'preview_picture' => $previewPicture,
         'detail_picture' => $detailPicture,
@@ -1614,6 +1620,9 @@ function getDictionaries(array $config): array
         'forms' => is_array($config['forms'] ?? null)
             ? $config['forms']
             : [],
+        // Библиотека смысловых блоков article_content v2 для карточек
+        // «Добавить блок» в редакторе.
+        'content_blocks' => ArticleContent::catalog(),
     ];
 }
 
@@ -2002,7 +2011,13 @@ switch ($action) {
 
     case 'create_or_update_draft':
         try {
-            $writer = new ArticleDraftWriter($config, new BitrixArticleWriteGateway());
+            $resolver = new BitrixContentReferenceResolver($config);
+            $writer = new ArticleDraftWriter(
+                $config,
+                new BitrixArticleWriteGateway(),
+                new HtmlRenderer($resolver),
+                $resolver
+            );
             $result = $writer->write($postPayload);
             sendSuccess(
                 $result['data'],

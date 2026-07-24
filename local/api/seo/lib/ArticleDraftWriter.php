@@ -115,7 +115,9 @@ final class ArticleDraftWriter
 
     public function __construct(
         private array $config,
-        private ArticleWriteGateway $gateway
+        private ArticleWriteGateway $gateway,
+        private ?HtmlRenderer $renderer = null,
+        private ?ContentReferenceResolver $resolver = null
     ) {
     }
 
@@ -175,11 +177,31 @@ final class ArticleDraftWriter
         }
 
         $warnings = [];
-        $propValues = $this->buildProperties(
-            $iblockId,
-            is_array($payload['properties'] ?? null) ? $payload['properties'] : [],
-            $warnings
-        );
+        $propertiesInput = is_array($payload['properties'] ?? null) ? $payload['properties'] : [];
+
+        // Контент как блоки article_content v2: HTML собирается детерминированно
+        // на сервере тем же HtmlRenderer, что и предпросмотр в React.
+        $detailHtml = (string)($payload['detail_html'] ?? '');
+        $articleContent = is_array($payload['article_content'] ?? null) ? $payload['article_content'] : null;
+        if ($articleContent !== null && $this->renderer !== null) {
+            $normalized = ArticleContent::normalize($articleContent, $this->resolver);
+            foreach ($normalized['warnings'] as $warning) {
+                $warnings[] = $warning;
+            }
+            $detailHtml = $this->renderer->render($normalized, [
+                'form' => [
+                    'show_form' => $propertiesInput['SHOW_FORM'] ?? 'N',
+                    'form_id' => $propertiesInput['FORM_ID'] ?? '',
+                    'button_text' => $propertiesInput['FORM_BUTTON_TEXT'] ?? '',
+                ],
+            ]);
+            // short_answer дублируется в свойство 851, если не задано явно.
+            if ($normalized['short_answer'] !== '' && !isset($propertiesInput['SHORT_ANSWER'])) {
+                $propertiesInput['SHORT_ANSWER'] = $normalized['short_answer'];
+            }
+        }
+
+        $propValues = $this->buildProperties($iblockId, $propertiesInput, $warnings);
 
         $fields = [
             'IBLOCK_ID' => $iblockId,
@@ -191,7 +213,7 @@ final class ArticleDraftWriter
             'ACTIVE' => 'N',
             'PREVIEW_TEXT' => (string)($payload['preview_text'] ?? ''),
             'PREVIEW_TEXT_TYPE' => 'text',
-            'DETAIL_TEXT' => (string)($payload['detail_html'] ?? ''),
+            'DETAIL_TEXT' => $detailHtml,
             'DETAIL_TEXT_TYPE' => 'html',
         ];
 
