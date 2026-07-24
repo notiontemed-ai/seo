@@ -51,6 +51,7 @@ export const api = {
   article: (id, source = 'all') => get('article', { id, source }),
   doctors: (params) => get('doctors', params),
   services: (params) => get('services', params),
+  clinics: (params) => get('clinics', params),
 
   // ── ИИ / n8n (POST, {action, data}) ──
   generateArticle: (data) => post({ action: 'generate_article', data }),

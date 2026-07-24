@@ -3,29 +3,7 @@ import { useStore } from '../../store/useStore.js';
 import { api } from '../../api/client.js';
 import { Button, Spinner, Modal, Notice, Tag } from '../../components/ui.jsx';
 
-function buildProperties(article, structures) {
-  const structure = structures.find((s) => s.id === article.structure_id);
-  const props = {};
-  const setIf = (k, v) => {
-    if (v !== '' && v != null && v !== 0 && !(Array.isArray(v) && v.length === 0)) props[k] = v;
-  };
-  setIf('ARTICLE_TYPE', article.article_type);
-  setIf('PRIMARY_QUERY', article.primary_query);
-  setIf('SECONDARY_QUERIES', article.secondary_queries);
-  setIf('SEARCH_INTENT', article.search_intent);
-  setIf('REGION', article.region);
-  setIf('AUTHOR', article.author_id);
-  setIf('MEDICAL_REVIEWER', article.medical_reviewer_id);
-  if (structure) {
-    setIf('ARTICLE_STRUCTURE', structure.id);
-    setIf('ARTICLE_STRUCTURE_NAME', structure.name);
-    setIf('ARTICLE_STRUCTURE_VERSION', structure.version || structure.v || '');
-  }
-  setIf('SHOW_FORM', article.show_form);
-  setIf('FORM_ID', article.form_id);
-  setIf('FORM_BUTTON_TEXT', article.form_button_text);
-  return props;
-}
+import { buildDraftPayload } from '../../lib/publishPayload.js';
 
 export default function PublishStep() {
   const { article, structures } = useStore();
@@ -40,14 +18,7 @@ export default function PublishStep() {
     setLoading(true);
     setError('');
     try {
-      const res = await api.createDraft({
-        code: article.code,
-        name: article.name,
-        preview_text: article.preview_text,
-        section_id: article.section_id,
-        article_content: { schema_version: '2.0', blocks: article.blocks },
-        properties: buildProperties(article, structures),
-      });
+      const res = await api.createDraft(buildDraftPayload(article, structures));
       setResult(res.data || res);
       setConfirm(false);
     } catch (e) {

@@ -217,6 +217,13 @@ final class ArticleDraftWriter
             'DETAIL_TEXT_TYPE' => 'html',
         ];
 
+        // SEO-мета элемента (IPROPERTY): title и description страницы.
+        // Принимается как seo:{title,description} либо seo_title/meta_description.
+        $ipropertyTemplates = $this->buildSeoMeta($payload);
+        if ($ipropertyTemplates !== []) {
+            $fields['IPROPERTY_TEMPLATES'] = $ipropertyTemplates;
+        }
+
         $existing = $this->gateway->findElementByCode($iblockId, $code);
 
         if ($existing === null) {
@@ -285,6 +292,31 @@ final class ArticleDraftWriter
         );
 
         return $base . '/bitrix/admin/iblock_element_edit.php?' . $query;
+    }
+
+    /**
+     * Собрать шаблоны SEO-меты (IPROPERTY_TEMPLATES) из payload.
+     * Пустые значения не передаются, чтобы не затирать существующую мету
+     * при обновлении черновика.
+     *
+     * @param array<string,mixed> $payload
+     * @return array<string,string>
+     */
+    private function buildSeoMeta(array $payload): array
+    {
+        $seo = is_array($payload['seo'] ?? null) ? $payload['seo'] : [];
+        $title = trim((string)($seo['title'] ?? $payload['seo_title'] ?? ''));
+        $description = trim((string)($seo['description'] ?? $payload['meta_description'] ?? ''));
+
+        $templates = [];
+        if ($title !== '') {
+            $templates['ELEMENT_META_TITLE'] = $title;
+        }
+        if ($description !== '') {
+            $templates['ELEMENT_META_DESCRIPTION'] = $description;
+        }
+
+        return $templates;
     }
 
     /**

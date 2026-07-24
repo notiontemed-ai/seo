@@ -3,6 +3,10 @@ import { defaultBlock } from '../lib/articleContent.js';
 
 const STORAGE_KEY = 'temed_seo_editor_state_v2';
 
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function emptyArticle() {
   return {
     name: '',
@@ -22,6 +26,20 @@ function emptyArticle() {
     show_form: 'N',
     form_id: '',
     form_button_text: '',
+    // SEO-мета элемента (IPROPERTY) и восстановленные свойства (этап 8.1).
+    seo_title: '',
+    meta_description: '',
+    short_answer: '',
+    featured_image_alt: '',
+    related_articles: [],
+    related_articles_v2: [],
+    related_services: [],
+    related_clinics: [],
+    medical_reviewed_at: today(),
+    content_updated_at: today(),
+    // Кейсовый вход (этап 8.3): расшифровка и аннотация хранятся со статьёй.
+    case_transcript: '',
+    case_summary: '',
     blocks: [],
   };
 }
@@ -36,6 +54,8 @@ export const useStore = create((set, get) => ({
   serviceMap: {},
   doctorList: [],
   serviceList: [],
+  clinicList: [],
+  articleList: [],
 
   // ── Навигация / UI ──
   step: 1,
@@ -132,7 +152,24 @@ export const useStore = create((set, get) => ({
       };
     }),
 
-  resetArticle: () => set({ article: emptyArticle(), blocks: [], medQuestions: [], cannibalization: null, textru: null, linking: null, dirty: false }),
+  resetArticle: () => set({ article: emptyArticle(), medQuestions: [], cannibalization: null, textru: null, linking: null, dirty: false }),
+
+  // Восстановление снапшота черновика: переносим только известные поля статьи.
+  applySnapshot: (data) =>
+    set((s) => {
+      const base = emptyArticle();
+      const patch = {};
+      for (const key of Object.keys(base)) {
+        if (data[key] !== undefined) patch[key] = data[key];
+      }
+      const blocks = data.article_content && Array.isArray(data.article_content.blocks)
+        ? data.article_content.blocks
+        : null;
+      return {
+        article: { ...s.article, ...patch, ...(blocks ? { blocks } : {}) },
+        dirty: false,
+      };
+    }),
 
   setBootstrap: (payload) => {
     const dict = payload.dictionaries || {};
@@ -148,6 +185,15 @@ export const useStore = create((set, get) => ({
       name: p.name,
       url: p.absolute_url || p.url || '',
     }));
+    const clinicList = ((payload.clinics || {}).items || payload.clinics || []).map((c) => ({
+      id: c.id,
+      name: c.name,
+    }));
+    const articleList = ((payload.articles || {}).items || payload.articles || []).map((a) => ({
+      id: a.id,
+      name: a.name,
+      source: a.source || '',
+    }));
     const doctorMap = Object.fromEntries(doctorList.map((d) => [d.id, d]));
     const serviceMap = Object.fromEntries(serviceList.map((p) => [p.id, p]));
     set({
@@ -155,6 +201,8 @@ export const useStore = create((set, get) => ({
       dictionaries: dict,
       doctorList,
       serviceList,
+      clinicList,
+      articleList,
       doctorMap,
       serviceMap,
     });
